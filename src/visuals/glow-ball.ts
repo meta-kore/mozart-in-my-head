@@ -46,12 +46,12 @@ export function getGlowTexture(): CanvasTexture {
  * A softly glowing sphere: an emissive core plus an additive radial-gradient
  * halo sprite. No post-processing, two draw calls.
  */
-export function createGlowBall(diameter: number, colour: string): GlowBall {
+export function createGlowBall(diameter: number, colour: string, segments = 32): GlowBall {
   const root = new Group();
   const base = new Color(colour);
 
   const core = new Mesh(
-    new SphereGeometry(diameter / 2, 32, 24),
+    new SphereGeometry(diameter / 2, segments, Math.round(segments * 0.75)),
     new MeshStandardMaterial({
       color: base.clone().multiplyScalar(0.5),
       emissive: base,

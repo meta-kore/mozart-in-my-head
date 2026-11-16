@@ -134,10 +134,10 @@ export class SectionsSystem extends createSystem({
   init(): void {
     // One invisible material shared by every grab zone: draws nothing, still a mesh.
     const zoneMaterial = new MeshBasicMaterial({ colorWrite: false, depthWrite: false });
-    const zoneGeometry = new SphereGeometry(GRAB_ZONE_DIAMETER / 2, 12, 8);
+    const zoneGeometry = new SphereGeometry(GRAB_ZONE_DIAMETER / 2, 10, 6);
 
     mozart40.sections.forEach((section, index) => {
-      const ball = createGlowBall(SECTION_DIAMETER, section.colour);
+      const ball = createGlowBall(SECTION_DIAMETER, section.colour, 20);
       ball.root.name = `Section:${section.id}`;
       const zone = new Mesh(zoneGeometry, zoneMaterial);
       zone.name = 'GrabZone';
