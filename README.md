@@ -4,7 +4,7 @@ A hands-first VR music toy for Meta Quest, built with Meta's Immersive Web SDK (
 
 Entry for the Meta VR Start Developer Competition 2026 (Entertainment track).
 
-**Live:** https://meta-kore.github.io/bach-in-my-head/
+**Live:** https://meta-kore.github.io/mozart-in-my-head/
 
 **Status:** work in progress.
 
