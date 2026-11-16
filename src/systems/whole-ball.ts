@@ -17,6 +17,8 @@ const BALL_DIAMETER = 0.18;
 const BALL_FORWARD = 0.45;
 /** How far below eye level the ball floats (roughly chest height). */
 const BALL_BELOW_EYES = 0.3;
+/** Space between the top of the ball and the hint text's centre. */
+const LABEL_GAP = 0.07;
 /** Outside XR (desktop development), distance along the line of sight. */
 const DESKTOP_DISTANCE = 0.85;
 /** A fingertip this close to the ball's surface counts as a touch. */
@@ -164,10 +166,17 @@ export class WholeBallSystem extends createSystem({
     this.audioPos.z = this.head.z;
     music.setListener(this.audioPos, this.audioFwd, this.audioUp);
 
-    // Label floats below the ball and turns to face the player (upright).
+    // Label floats just above the ball, turned and tilted to face the eyes.
+    // (Below a chest-height ball it falls at the bottom edge of the
+    // headset's field of view.)
     const lbl = this.label.mesh;
-    lbl.position.set(this.ballPos.x, this.ballPos.y - BALL_DIAMETER / 2 - 0.07, this.ballPos.z);
-    lbl.rotation.set(0, Math.atan2(this.head.x - lbl.position.x, this.head.z - lbl.position.z), 0);
+    lbl.position.set(this.ballPos.x, this.ballPos.y + BALL_DIAMETER / 2 + LABEL_GAP, this.ballPos.z);
+    const dx = this.head.x - lbl.position.x;
+    const dy = this.head.y - lbl.position.y;
+    const dz = this.head.z - lbl.position.z;
+    // Rotating about X by +θ turns the plane's front (+Z) downward, so tilt
+    // by -atan(dy / horizontal) to face eyes that are above the label.
+    lbl.rotation.set(-Math.atan2(dy, Math.hypot(dx, dz)), Math.atan2(dx, dz), 0, 'YXZ');
   }
 
   /** Place the ball level with the chest, straight ahead of where the player faces. */
