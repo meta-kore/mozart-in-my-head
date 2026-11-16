@@ -1,45 +1,40 @@
-# IWSDK App
+# Bach in My Head
 
-This project uses `iwsdk.config.json` for declarative scene, asset, component,
-XR, and emulator configuration. Application systems remain explicit in
-`src/index.ts`.
+A hands-first VR music toy for Meta Quest, built with Meta's Immersive Web SDK (WebXR). A Bach fugue floats in front of you as one glowing ball. Take it in both hands and pull it apart into its four voices, place each voice around you, and hear the music come from where you put it.
 
-```sh
+Entry for the Meta VR Start Developer Competition 2026 (Entertainment track).
+
+**Live:** https://meta-kore.github.io/bach-in-my-head/
+
+**Status:** work in progress. The project is scaffolded and deployed, with an empty dark room. Music and interaction are not built yet.
+
+**Tested on:** the IWER emulator (Quest 3 profile) in a desktop Chromium browser. Not yet tested on a headset.
+
+## Run locally
+
+Requires Node 20.19+, 22.12+ or 24+.
+
+```bash
 npm install
-npm run dev
+npm run dev        # managed dev session over HTTPS (use this for a headset on the same Wi-Fi)
+npm run dev:http   # plain HTTP on http://localhost:8081, for desktop browsers that refuse the dev certificate
 ```
 
-Use the Runtime and Editor controls in the managed browser to switch between
-the running experience and its authored scene.
+Open the page, press **Enter XR**, and use the emulator toolbar to switch between controllers and hands.
 
-## Starter content
+```bash
+npm run typecheck
+npm run build      # output in dist/
+```
 
-The robot and welcome panel are small examples of authored scene content plus
-runtime systems. The robot turns toward the player's head and plays a sound
-when pressed. To remove the robot, delete its scene node, its `RobotSystem`
-registration from `src/index.ts` or `src/index.js`, and its `Robot` registration
-from `src/components.ts` or `src/components.js`; you can then delete the unused
-robot component and system files. To remove the welcome panel, delete its scene
-node and its `PanelSystem` registration from the application entry point.
+## Deploying
 
-The robot stands on the second of three numbered stations. The first holds dark
-pieces you can grab and move, and the third holds a ring you can spin in place.
-The studio props (the plinths and the dark pieces, plus the floor and stage in VR
-and Desktop 3D) are built in code in `src/scene-assets/studio.scene-asset.ts` or
-`.js`. The VR and Desktop 3D background furniture is built the same way in
-`src/scene-assets/decor.scene-asset.ts` or `.js`, so the starter downloads no
-extra models. To remove any of them, delete their scene nodes and their entries
-in `src/assets.ts` or `src/assets.js`, then delete the files you no longer use.
-The station labels are `public/ui/label-*.uikitml`.
+GitHub Pages serves the `gh-pages` branch. The Actions workflow in `.github/workflows/deploy.yml` builds and deploys on every push to `main` once Actions can run on this account; until then, build locally and push `dist/` to `gh-pages`.
 
-The rest of the look is built-in components in the scene, which you can edit in
-the editor without code. The soft light on every object is the scene root's
-`IBLGradient` (select the Level Root to edit it), and the soft shadows under
-each object are `ContactShadow` nodes. In VR and Desktop 3D, the sky is the
-scene root's `DomeGradient` (its colors, tilt and dither are also on the Level
-Root), and the floor fades into it through the `DomeFade` on the floor node. AR
-projects have no sky or floor, so passthrough stays visible, and a
-`ShadowCatcher` node grounds the stations.
+## Music
 
-- Minimal scene walkthrough: https://iwsdk.dev/guides/01b-minimal-scene.html
-- XR-enabled projects — IWER emulator controls: https://iwsdk.dev/guides/02-testing-experience.html#iwer-controls
+No recordings are used. The music is synthesised in the browser from note data. Score source and licence: see `CREDITS.md` (to be added with the note data).
+
+## Licence
+
+MIT. See `LICENSE`.
