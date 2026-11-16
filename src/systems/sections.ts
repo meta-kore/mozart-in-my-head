@@ -1,4 +1,5 @@
 import {
+  Color,
   createSystem,
   Entity,
   Grabbed,
@@ -11,6 +12,8 @@ import {
   Vector3,
 } from '@iwsdk/core';
 import { music } from '../audio/app-audio.js';
+import { chooseSolo, distanceGain, EAR_OFFSET, SOLO_DUCK, stepDuck } from '../audio/mix.js';
+import { Sparks } from '../visuals/sparks.js';
 import { BallStates, MusicBall, SectionBall } from '../components.js';
 import { mozart40, type Section } from '../music/mozart40.js';
 import { createGlowBall, createTextPanel, type GlowBall, type TextPanel } from '../visuals/glow-ball.js';
@@ -49,7 +52,22 @@ interface SectionView {
   from: Vector3;
   to: Vector3;
   level: number;
+  colour: Color;
+  /** Current solo-duck multiplier, 1 = not ducked. */
+  duck: number;
+  /** Slow-moving loudness, to spot note attacks as sudden rises above it. */
+  slowDb: number;
+  lastSpark: number;
 }
+
+/** A note attack: loudness this many dB above its recent average... */
+const ONSET_RISE_DB = 9;
+/** ...and at least this loud. */
+const ONSET_MIN_DB = -40;
+/** At most one spark burst per section this often (seconds). */
+const SPARK_REFRACTORY = 0.25;
+/** While one section is soloed, the others' glow dims to this. */
+const DUCKED_GLOW = 0.35;
 
 /**
  * The Apart state: seven orchestral sections, each a small glowing ball with
@@ -67,6 +85,12 @@ export class SectionsSystem extends createSystem({
   /** 0..1 progress of the current flight, or -1 when no flight is running. */
   private flight = -1;
   private merging = false;
+  /** Index of the soloed section, or -1. */
+  private solo = -1;
+  private sparks!: Sparks;
+  private readonly earDistances: number[] = [];
+  private readonly earL = new Vector3();
+  private readonly earR = new Vector3();
 
   private readonly head = new Vector3();
   private readonly headQuat = new Quaternion();
@@ -101,8 +125,23 @@ export class SectionsSystem extends createSystem({
       ]);
       this.world.createTransformEntity(label.mesh, { persistent: true });
 
-      this.views.push({ section, ball, label, entity, from: new Vector3(), to: new Vector3(), level: 0 });
+      this.views.push({
+        section,
+        ball,
+        label,
+        entity,
+        from: new Vector3(),
+        to: new Vector3(),
+        level: 0,
+        colour: new Color(section.colour),
+        duck: 1,
+        slowDb: -60,
+        lastSpark: 0,
+      });
     });
+
+    this.sparks = new Sparks();
+    this.world.createTransformEntity(this.sparks.root, { persistent: true });
 
     // A ball that is picked up mid-flight stays with the hand.
     this.cleanupFuncs.push(
@@ -128,7 +167,7 @@ export class SectionsSystem extends createSystem({
     else if (state === BallStates.Apart && !this.merging) this.beginMerge();
   }
 
-  update(delta: number): void {
+  update(delta: number, time: number): void {
     const whole = this.wholeEntity();
     if (!whole) return;
     const presenting = readViewer(this, this.head, this.headQuat);
@@ -139,7 +178,17 @@ export class SectionsSystem extends createSystem({
       if (state === BallStates.Apart) this.beginSplit(presenting);
       this.lastState = state;
     }
-    if (state !== BallStates.Apart) return;
+    this.sparks.update(delta);
+    if (state !== BallStates.Apart) {
+      // Whole: every section sounds from the whole ball, at its distance.
+      const g = distanceGain(this.wholePos.distanceTo(this.head));
+      for (const v of this.views) {
+        v.duck = 1;
+        music.setGain(v.section.id, v.section.gain * g, 0.03);
+      }
+      this.solo = -1;
+      return;
+    }
 
     // Flight out (split) or home (merge), eased.
     if (this.flight >= 0) {
@@ -162,9 +211,25 @@ export class SectionsSystem extends createSystem({
     // Putting it back: any two balls brought together re-form the whole.
     if (this.flight < 0 && !this.merging && this.mergeIfTouching(whole)) return;
 
-    for (const v of this.views) {
+    // Solo: a ball held near either ear; the others duck.
+    this.right.set(1, 0, 0).applyQuaternion(this.headQuat);
+    this.earL.copy(this.head).addScaledVector(this.right, -EAR_OFFSET);
+    this.earR.copy(this.head).addScaledVector(this.right, EAR_OFFSET);
+    this.views.forEach((v, i) => {
+      const p = v.ball.root.position;
+      this.earDistances[i] = Math.min(p.distanceTo(this.earL), p.distanceTo(this.earR));
+    });
+    this.solo = this.flight < 0 && !this.merging ? chooseSolo(this.solo, this.earDistances) : -1;
+
+    for (let i = 0; i < this.views.length; i++) {
+      const v = this.views[i];
       const root = v.ball.root;
       root.getWorldPosition(this.pos);
+
+      // Volume: the section's balance, its distance from the head, and any solo duck.
+      const ducked = this.solo >= 0 && i !== this.solo;
+      v.duck = stepDuck(v.duck, ducked ? SOLO_DUCK : 1, delta);
+      music.setGain(v.section.id, v.section.gain * distanceGain(this.pos.distanceTo(this.head)) * v.duck, 0.03);
 
       // Each section sounds from its own ball.
       this.audioPos.x = this.pos.x;
@@ -176,10 +241,17 @@ export class SectionsSystem extends createSystem({
       const db = 20 * Math.log10(music.level(v.section.id) + 1e-6);
       const target = Math.max(0, Math.min(1, (db + 48) / 30));
       v.level += (target - v.level) * Math.min(1, (target > v.level ? 20 : 5) * delta);
-      v.ball.setIntensity(v.level);
+      v.ball.setIntensity(v.level * (ducked ? DUCKED_GLOW : 1));
+
+      // A spark for each note attack: a sudden rise above recent loudness.
+      if (db - v.slowDb > ONSET_RISE_DB && db > ONSET_MIN_DB && time - v.lastSpark > SPARK_REFRACTORY) {
+        this.sparks.emit(this.pos, v.colour, ducked ? 1 : 3);
+        v.lastSpark = time;
+      }
+      v.slowDb += (db - v.slowDb) * Math.min(1, delta / 0.25);
 
       const lbl = v.label.mesh;
-      const stagger = this.views.indexOf(v) % 2 === 1 ? LABEL_STAGGER : 0;
+      const stagger = i % 2 === 1 ? LABEL_STAGGER : 0;
       lbl.position.set(this.pos.x, this.pos.y + SECTION_DIAMETER / 2 + LABEL_GAP + stagger, this.pos.z);
       faceViewer(lbl, this.head);
     }
@@ -253,6 +325,7 @@ export class SectionsSystem extends createSystem({
 
   private finishMerge(whole: Entity): void {
     this.merging = false;
+    this.sparks.hideAll();
     for (const v of this.views) {
       v.ball.root.visible = false;
       v.label.mesh.visible = false;

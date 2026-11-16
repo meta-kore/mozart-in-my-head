@@ -24,7 +24,7 @@ export interface GlowBall {
 let glowTexture: CanvasTexture | null = null;
 
 /** A soft white radial falloff, shared by every halo. */
-function getGlowTexture(): CanvasTexture {
+export function getGlowTexture(): CanvasTexture {
   if (glowTexture) return glowTexture;
   const size = 256;
   const canvas = document.createElement('canvas');
