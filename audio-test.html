@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>Audio test · Bach in My Head</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0d0f17;
+        --panel: #171a26;
+        --text: #e8e9f0;
+        --muted: #9a9db0;
+        --accent: #8fb3ff;
+      }
+      body {
+        margin: 0;
+        padding: 24px 16px;
+        background: var(--bg);
+        color: var(--text);
+        font: 15px/1.5 system-ui, sans-serif;
+      }
+      main { max-width: 640px; margin: 0 auto; }
+      h1 { font-size: 20px; margin: 0 0 4px; }
+      p { color: var(--muted); margin: 0 0 20px; }
+      button {
+        font: inherit;
+        color: var(--text);
+        background: #262b3d;
+        border: 1px solid #343a52;
+        border-radius: 8px;
+        padding: 8px 16px;
+        cursor: pointer;
+      }
+      button[aria-pressed='true'] { background: var(--accent); color: #0d0f17; }
+      .bar { display: flex; gap: 12px; align-items: center; margin-bottom: 20px; }
+      #position { color: var(--muted); font-variant-numeric: tabular-nums; }
+      .voice {
+        display: grid;
+        grid-template-columns: 80px 1fr;
+        gap: 6px 12px;
+        align-items: center;
+        background: var(--panel);
+        border-radius: 10px;
+        padding: 12px;
+        margin-bottom: 10px;
+        border-left: 4px solid var(--c);
+      }
+      .voice label { color: var(--muted); font-size: 13px; }
+      .voice strong { grid-row: span 3; }
+      .meter { height: 8px; background: #262b3d; border-radius: 4px; overflow: hidden; }
+      .meter div { height: 100%; width: 0; background: var(--c); }
+      .controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+      input[type='range'] { width: 140px; }
+    </style>
+    <script type="module" crossorigin src="./assets/audio-test-C6B5Xs2a.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/modulepreload-polyfill-B5Qt9EMX.js">
+  </head>
+  <body>
+    <main>
+      <h1>Audio engine test</h1>
+      <p>The fugue, synthesised in the browser. No XR. Use headphones to hear the voices placed left and right.</p>
+      <div class="bar">
+        <button id="play">Play</button>
+        <span id="position">stopped</span>
+      </div>
+      <div id="voices"></div>
+    </main>
+  </body>
+</html>
