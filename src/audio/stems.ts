@@ -26,9 +26,13 @@ export class StemPlayer {
   private ctx: AudioContext | null = null;
   private stems = new Map<string, StemChain>();
   private master!: GainNode;
+  private mixAnalyser!: AnalyserNode;
+  private mixBuffer!: Float32Array<ArrayBuffer>;
   private startedAt = 0;
   private loopSeconds = 0;
   private userPaused = false;
+  private sourcesStarted = false;
+  private loading: Promise<void> | null = null;
 
   constructor(private readonly specs: StemSpec[]) {}
 
@@ -36,34 +40,74 @@ export class StemPlayer {
     return this.specs.map((s) => s.id);
   }
 
+  /** True once play() has started the stems. */
   get started(): boolean {
-    return this.ctx !== null;
+    return this.sourcesStarted;
+  }
+
+  /** True once every stem is decoded and ready to play. */
+  get loaded(): boolean {
+    return this.loopSeconds > 0;
   }
 
   get playing(): boolean {
-    return this.ctx?.state === 'running' && !this.userPaused;
+    return this.sourcesStarted && this.ctx?.state === 'running' && !this.userPaused;
   }
 
   /**
-   * Fetch and decode every stem, then start them together. Call from a user
-   * gesture. `onProgress` reports stems decoded so far.
+   * Load, unlock and play in one call. Use from a click or tap handler.
+   * `onProgress` reports stems decoded so far.
    */
   async start(onProgress?: (done: number, total: number) => void): Promise<void> {
-    if (this.ctx) {
+    if (this.sourcesStarted) {
       await this.resume();
       return;
     }
+    const loading = this.load(onProgress);
+    this.unlock();
+    await loading;
+    this.play();
+  }
+
+  /**
+   * Allow sound. Browsers only let audio start inside a user gesture (click,
+   * tap, key, or the click that enters XR), so call this from such a handler.
+   * A touch inside VR is not a gesture, which is why the app unlocks audio
+   * on the Enter XR click and only starts playback later.
+   */
+  unlock(): void {
+    this.ensureContext();
+    if (!this.userPaused) void this.ctx!.resume();
+  }
+
+  /**
+   * Fetch and decode every stem. Safe before any user gesture: the audio
+   * context exists but stays silent until unlock().
+   */
+  load(onProgress?: (done: number, total: number) => void): Promise<void> {
+    this.loading ??= this.decodeAll(onProgress);
+    return this.loading;
+  }
+
+  private ensureContext(): AudioContext {
+    if (this.ctx) return this.ctx;
     const ctx = new AudioContext({ latencyHint: 'interactive' });
     this.ctx = ctx;
-    await ctx.resume();
-
     const compressor = ctx.createDynamicsCompressor();
     compressor.threshold.value = -12;
     compressor.ratio.value = 2.5;
     compressor.connect(ctx.destination);
     this.master = ctx.createGain();
     this.master.connect(compressor);
+    this.mixAnalyser = ctx.createAnalyser();
+    this.mixAnalyser.fftSize = 512;
+    this.mixBuffer = new Float32Array(this.mixAnalyser.fftSize);
+    this.master.connect(this.mixAnalyser);
+    return ctx;
+  }
 
+  private async decodeAll(onProgress?: (done: number, total: number) => void): Promise<void> {
+    const ctx = this.ensureContext();
     let done = 0;
     const buffers = await Promise.all(
       this.specs.map(async (s) => {
@@ -100,9 +144,18 @@ export class StemPlayer {
         levelBuffer: new Float32Array(analyser.fftSize),
       });
     });
+  }
 
+  /**
+   * Start every stem together from the top. Requires load() to have finished;
+   * sound is heard once unlock() has run.
+   */
+  play(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.loaded || this.sourcesStarted) return;
+    this.sourcesStarted = true;
     // One shared start time a little in the future keeps every stem aligned.
-    this.startedAt = ctx.currentTime + 0.15;
+    this.startedAt = ctx.currentTime + 0.1;
     for (const chain of this.stems.values()) {
       const src = ctx.createBufferSource();
       src.buffer = chain.buffer;
@@ -174,9 +227,23 @@ export class StemPlayer {
     return Math.sqrt(sum / c.levelBuffer.length);
   }
 
+  /** RMS loudness of the whole mix after all volume controls. */
+  mixLevel(): number {
+    if (!this.mixAnalyser) return 0;
+    this.mixAnalyser.getFloatTimeDomainData(this.mixBuffer);
+    let sum = 0;
+    for (let i = 0; i < this.mixBuffer.length; i++) sum += this.mixBuffer[i] ** 2;
+    return Math.sqrt(sum / this.mixBuffer.length);
+  }
+
+  /** Place every stem at one point (the Whole state's single ball). */
+  setAllPositions(p: Vec3): void {
+    for (const id of this.stems.keys()) this.setPosition(id, p);
+  }
+
   /** Seconds into the loop, or null before start. */
   position(): number | null {
-    if (!this.ctx || this.loopSeconds === 0) return null;
+    if (!this.ctx || !this.sourcesStarted) return null;
     const t = this.ctx.currentTime - this.startedAt;
     return t < 0 ? 0 : t % this.loopSeconds;
   }
