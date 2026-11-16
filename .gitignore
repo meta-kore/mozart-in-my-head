@@ -46,3 +46,7 @@ pids/
 
 # Local Claude Code settings
 .claude/settings.local.json
+
+# Private project notes (kept local, not published)
+CLAUDE.md
+WEBCAM_VERSION.md

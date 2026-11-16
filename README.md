@@ -6,9 +6,7 @@ Entry for the Meta VR Start Developer Competition 2026 (Entertainment track).
 
 **Live:** https://meta-kore.github.io/bach-in-my-head/
 
-**Status:** work in progress. The project is scaffolded and deployed, with an empty dark room. Music and interaction are not built yet.
-
-**Tested on:** the IWER emulator (Quest 3 profile) in a desktop Chromium browser. Not yet tested on a headset.
+**Status:** work in progress.
 
 ## Run locally
 
