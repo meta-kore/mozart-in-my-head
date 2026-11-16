@@ -10,6 +10,7 @@ import {
 import { music } from '../audio/app-audio.js';
 import { BallStates, MusicBall } from '../components.js';
 import { createGlowBall, createTextPanel, type GlowBall, type TextPanel } from '../visuals/glow-ball.js';
+import { faceViewer, readViewer } from './viewer.js';
 
 /** Starting values from CLAUDE.md; tune on a headset. */
 const BALL_DIAMETER = 0.18;
@@ -107,12 +108,7 @@ export class WholeBallSystem extends createSystem({
   private reported = false;
 
   private tick(delta: number, time: number): void {
-    // IWSDK owns the XR session (not three's renderer.xr), and in XR the
-    // tracked head lives in player.head; outside XR the camera is the view.
-    const presenting = this.world.session !== undefined;
-    const viewer = presenting ? this.player.head : this.camera;
-    viewer.getWorldPosition(this.head);
-    viewer.getWorldQuaternion(this.headQuat);
+    const presenting = readViewer(this, this.head, this.headQuat);
 
     if (presenting !== this.wasImmersive) {
       if (import.meta.env.DEV) console.info(`[WholeBall] immersive: ${presenting}`);
@@ -133,7 +129,15 @@ export class WholeBallSystem extends createSystem({
     root.getWorldPosition(this.ballPos);
     const state = this.ballEntity.getValue(MusicBall, 'state');
 
-    if (state === BallStates.Idle) {
+    // While apart, the sections system owns the visuals and each stem's
+    // position; this system only keeps the listener on the head.
+    const apart = state === BallStates.Apart;
+    root.visible = !apart;
+    this.label.mesh.visible = !apart;
+
+    if (apart) {
+      // nothing to animate on the hidden whole ball
+    } else if (state === BallStates.Idle) {
       if (this.handActivated()) this.onActivate();
       if (this.pendingStart && music.loaded) this.startMusic();
       // Gentle breathing glow while silent.
@@ -152,7 +156,7 @@ export class WholeBallSystem extends createSystem({
     this.audioPos.x = this.ballPos.x;
     this.audioPos.y = this.ballPos.y;
     this.audioPos.z = this.ballPos.z;
-    music.setAllPositions(this.audioPos);
+    if (!apart) music.setAllPositions(this.audioPos);
     this.forward.set(0, 0, -1).applyQuaternion(this.headQuat);
     this.up.set(0, 1, 0).applyQuaternion(this.headQuat);
     this.audioFwd.x = this.forward.x;
@@ -171,12 +175,7 @@ export class WholeBallSystem extends createSystem({
     // headset's field of view.)
     const lbl = this.label.mesh;
     lbl.position.set(this.ballPos.x, this.ballPos.y + BALL_DIAMETER / 2 + LABEL_GAP, this.ballPos.z);
-    const dx = this.head.x - lbl.position.x;
-    const dy = this.head.y - lbl.position.y;
-    const dz = this.head.z - lbl.position.z;
-    // Rotating about X by +θ turns the plane's front (+Z) downward, so tilt
-    // by -atan(dy / horizontal) to face eyes that are above the label.
-    lbl.rotation.set(-Math.atan2(dy, Math.hypot(dx, dz)), Math.atan2(dx, dz), 0, 'YXZ');
+    faceViewer(lbl, this.head);
   }
 
   /** Place the ball level with the chest, straight ahead of where the player faces. */
@@ -217,7 +216,7 @@ export class WholeBallSystem extends createSystem({
 
   private onActivate(): void {
     const state = this.ballEntity.getValue(MusicBall, 'state');
-    if (state === BallStates.Playing) {
+    if (state !== BallStates.Idle) {
       // After a session ended on desktop, a click brings the music back.
       void music.setAppVisible(true);
       return;

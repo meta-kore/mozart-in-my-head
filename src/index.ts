@@ -1,6 +1,7 @@
 import { World } from '@iwsdk/core';
 import projectOptions from 'virtual:iwsdk-project';
 import { prepareAudio } from './audio/app-audio.js';
+import { SectionsSystem } from './systems/sections.js';
 import { WholeBallSystem } from './systems/whole-ball.js';
 
 // Decode the music now; unlock sound on the first click (e.g. Enter XR).
@@ -11,6 +12,7 @@ World.create(
   projectOptions,
 ).then((world) => {
   world.registerSystem(WholeBallSystem);
+  world.registerSystem(SectionsSystem);
   // Development only: lets the browser console inspect the running world.
   if (import.meta.env.DEV) {
     (window as unknown as { __world: unknown }).__world = world;
