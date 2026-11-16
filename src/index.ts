@@ -12,5 +12,10 @@ World.create(
 ).then((world) => {
   world.registerSystem(WholeBallSystem);
   // Development only: lets the browser console inspect the running world.
-  if (import.meta.env.DEV) (window as unknown as { __world: unknown }).__world = world;
+  if (import.meta.env.DEV) {
+    (window as unknown as { __world: unknown }).__world = world;
+    if (new URLSearchParams(location.search).has('grabtest')) {
+      void import('./dev/grab-test.js').then((m) => world.registerSystem(m.GrabTestSystem));
+    }
+  }
 });
