@@ -2,6 +2,7 @@ import {
   createSystem,
   Entity,
   Grabbed,
+  GrabSystem,
   Mesh,
   MeshBasicMaterial,
   OneHandGrabbable,
@@ -34,6 +35,8 @@ const DESKTOP_ARC_BELOW_EYES = 0.2;
 const DESKTOP_ARC_SPAN_DEG = 70;
 /** Seconds for the balls to fly out on a split, or home on a merge. */
 const FLIGHT_SECONDS = 0.7;
+/** Bring two section balls this close (centre to centre) and the whole ball re-forms. */
+const MERGE_DISTANCE = 0.08;
 const LABEL_GAP = 0.035;
 /** Every other label sits this much higher, so neighbouring names never overlap. */
 const LABEL_STAGGER = 0.045;
@@ -156,6 +159,9 @@ export class SectionsSystem extends createSystem({
       }
     }
 
+    // Putting it back: any two balls brought together re-form the whole.
+    if (this.flight < 0 && !this.merging && this.mergeIfTouching(whole)) return;
+
     for (const v of this.views) {
       const root = v.ball.root;
       root.getWorldPosition(this.pos);
@@ -212,7 +218,30 @@ export class SectionsSystem extends createSystem({
     this.flight = 0;
   }
 
+  /** If two balls touch, re-form the whole ball where they met. Returns true if merging. */
+  private mergeIfTouching(whole: Entity): boolean {
+    const vs = this.views;
+    for (let i = 0; i < vs.length; i++) {
+      for (let j = i + 1; j < vs.length; j++) {
+        const a = vs[i].ball.root.position;
+        const b = vs[j].ball.root.position;
+        if (a.distanceTo(b) < MERGE_DISTANCE) {
+          // The whole ball re-forms between them, then drifts home.
+          whole.object3D?.position.addVectors(a, b).multiplyScalar(0.5);
+          whole.object3D?.getWorldPosition(this.wholePos);
+          this.beginMerge();
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   private beginMerge(): void {
+    const grab = this.world.getSystem(GrabSystem);
+    for (const v of this.views) {
+      if (v.entity.hasComponent(Grabbed)) grab?.forceRelease(v.entity);
+    }
     this.merging = true;
     for (const v of this.views) {
       if (v.entity.hasComponent(OneHandGrabbable)) v.entity.removeComponent(OneHandGrabbable);

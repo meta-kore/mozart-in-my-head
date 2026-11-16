@@ -26,6 +26,16 @@ const DESKTOP_DISTANCE = 0.85;
 const TOUCH_MARGIN = 0.015;
 /** A pinch or trigger press counts when the hand is this close to the ball's surface. */
 const PINCH_MARGIN = 0.12;
+/** A pinch counts as holding the whole ball when the fingertip is within this of its surface. */
+const HOLD_MARGIN = 0.04;
+/** Hands this far apart (pinch points) while both hold the ball split it. */
+const SPLIT_DISTANCE = 0.35;
+/** One-handed split: hold a pinch on the ball this long. */
+const ONE_HAND_HOLD_SECONDS = 1.5;
+/** Furthest the ball stretches along the hands' axis. */
+const MAX_STRETCH = 2.4;
+/** How quickly the ball springs back home when let go (per second). */
+const SPRING_RATE = 7;
 const WHOLE_COLOUR = '#ffe2a8';
 const CREDIT = 'Mozart · Symphony No. 40 · Colibrì Ensemble · The Spheres Dataset · CC BY-SA 4.0';
 
@@ -52,6 +62,23 @@ export class WholeBallSystem extends createSystem({
   private wasImmersive = false;
   private pendingStart = false;
   private level = 0;
+
+  /** Where the ball rests in front of the chest; it drifts back here when let go. */
+  private readonly rest = new Vector3();
+  /** Which hands currently hold the whole ball (pinch began on it). */
+  private readonly holding = { left: false, right: false };
+  private holdSeconds = 0;
+  private bothStartDistance = 0;
+  private wasBoth = false;
+  /** 0..1, how close the current pull or hold is to splitting. */
+  private splitProgress = 0;
+  private hintShown: 'pull' | 'hold' | null = null;
+  private readonly tipL = new Vector3();
+  private readonly tipR = new Vector3();
+  private readonly axis = new Vector3();
+  private readonly yAxis = new Vector3(0, 1, 0);
+  private readonly targetQuat = new Quaternion();
+  private readonly identityQuat = new Quaternion();
 
   private readonly head = new Vector3();
   private readonly headQuat = new Quaternion();
@@ -136,7 +163,14 @@ export class WholeBallSystem extends createSystem({
     this.label.mesh.visible = !apart;
 
     if (apart) {
-      // nothing to animate on the hidden whole ball
+      // Hidden: reset its shape. Its position is left alone, because a merge
+      // re-forms the whole ball where two sections met.
+      root.scale.setScalar(1);
+      root.quaternion.identity();
+      this.holding.left = this.holding.right = false;
+      this.holdSeconds = 0;
+      this.wasBoth = false;
+      this.splitProgress = 0;
     } else if (state === BallStates.Idle) {
       if (this.handActivated()) this.onActivate();
       if (this.pendingStart && music.loaded) this.startMusic();
@@ -149,7 +183,9 @@ export class WholeBallSystem extends createSystem({
       const target = Math.max(0, Math.min(1, (db + 45) / 30));
       const rate = target > this.level ? 18 : 4;
       this.level += (target - this.level) * Math.min(1, rate * delta);
-      this.ball.setIntensity(this.level);
+      this.updateGestures(delta);
+      // The pull or hold brightens the ball on top of the music's pulse.
+      this.ball.setIntensity(Math.min(1, this.level + 0.8 * this.splitProgress));
     }
 
     // Sound comes from the ball; the listener is the head.
@@ -184,6 +220,7 @@ export class WholeBallSystem extends createSystem({
     if (!this.wasImmersive) {
       // Desktop / flat view: centre the ball on the line of sight instead.
       this.ball.root.position.copy(this.head).addScaledVector(this.forward, DESKTOP_DISTANCE);
+      this.rest.copy(this.ball.root.position);
       this.placed = true;
       return;
     }
@@ -195,7 +232,92 @@ export class WholeBallSystem extends createSystem({
       this.head.y - BALL_BELOW_EYES,
       this.head.z + this.forward.z * BALL_FORWARD,
     );
+    this.rest.copy(this.ball.root.position);
     this.placed = true;
+  }
+
+  /**
+   * Playing state: the two-hand pull and the one-hand hold.
+   * A hand holds the ball if its pinch (or trigger) began with the fingertip
+   * on or inside the ball, and keeps holding until it lets go.
+   */
+  private updateGestures(delta: number): void {
+    const xr = this.input.xr;
+    const root = this.ball.root;
+    const reach = BALL_DIAMETER / 2 + HOLD_MARGIN;
+    this.player.indexTipSpaces.left.getWorldPosition(this.tipL);
+    this.player.indexTipSpaces.right.getWorldPosition(this.tipR);
+
+    for (const side of SIDES) {
+      const sel = xr.getSelectState(side);
+      const tip = side === 'left' ? this.tipL : this.tipR;
+      if (sel.start && tip.lengthSq() > 0 && tip.distanceTo(this.ballPos) < reach) this.holding[side] = true;
+      if (!sel.active) this.holding[side] = false;
+    }
+
+    const both = this.holding.left && this.holding.right;
+    const one = this.holding.left !== this.holding.right;
+
+    if (both) {
+      const d = this.tipL.distanceTo(this.tipR);
+      if (!this.wasBoth) {
+        this.bothStartDistance = Math.min(d, SPLIT_DISTANCE * 0.8);
+        this.wasBoth = true;
+      }
+      this.holdSeconds = 0;
+      // The ball sits between the hands and stretches along the line joining them.
+      root.position.addVectors(this.tipL, this.tipR).multiplyScalar(0.5);
+      this.axis.subVectors(this.tipR, this.tipL);
+      if (this.axis.lengthSq() > 1e-6) {
+        this.targetQuat.setFromUnitVectors(this.yAxis, this.axis.normalize());
+        root.quaternion.copy(this.targetQuat);
+      }
+      const stretch = Math.min(MAX_STRETCH, Math.max(1, d / BALL_DIAMETER));
+      const thin = 1 / Math.sqrt(stretch);
+      root.scale.set(thin, stretch, thin);
+      this.splitProgress = Math.max(0, Math.min(1, (d - this.bothStartDistance) / (SPLIT_DISTANCE - this.bothStartDistance)));
+      this.setHint('pull');
+      if (d >= SPLIT_DISTANCE) this.split();
+      return;
+    }
+
+    this.wasBoth = false;
+    if (one) {
+      this.holdSeconds += delta;
+      this.splitProgress = Math.min(1, this.holdSeconds / ONE_HAND_HOLD_SECONDS);
+      this.setHint('hold');
+      if (this.holdSeconds >= ONE_HAND_HOLD_SECONDS) this.split();
+    } else {
+      this.holdSeconds = 0;
+      this.splitProgress = 0;
+      this.setHint('pull');
+    }
+
+    // Not held by both hands: spring back to its round shape and home position.
+    const k = 1 - Math.exp(-SPRING_RATE * delta);
+    root.position.lerp(this.rest, k);
+    root.quaternion.slerp(this.identityQuat, k);
+    const sy = root.scale.y + (1 - root.scale.y) * k;
+    const sx = root.scale.x + (1 - root.scale.x) * k;
+    root.scale.set(sx, sy, sx);
+  }
+
+  /** Open the whole ball into its sections, from where it is now. */
+  private split(): void {
+    this.holding.left = this.holding.right = false;
+    this.holdSeconds = 0;
+    this.wasBoth = false;
+    this.splitProgress = 0;
+    this.ballEntity.setValue(MusicBall, 'state', BallStates.Apart);
+  }
+
+  private setHint(kind: 'pull' | 'hold'): void {
+    if (this.hintShown === kind) return;
+    this.hintShown = kind;
+    this.label.setText([
+      { text: kind === 'hold' ? 'Keep holding to open it up…' : 'Take it in both hands and pull.', size: 64 },
+      { text: CREDIT, size: 26, colour: '#9a9db0' },
+    ]);
   }
 
   /** A fingertip touching the ball, or a pinch / trigger with the hand at the ball. */
@@ -234,10 +356,8 @@ export class WholeBallSystem extends createSystem({
     this.pendingStart = false;
     music.play();
     this.ballEntity.setValue(MusicBall, 'state', BallStates.Playing);
-    this.label.setText([
-      { text: 'Take it in both hands and pull.', size: 64 },
-      { text: CREDIT, size: 26, colour: '#9a9db0' },
-    ]);
+    this.hintShown = null;
+    this.setHint('pull');
   }
 
   private showIdleText(): void {

@@ -1,6 +1,6 @@
 import { World } from '@iwsdk/core';
 import projectOptions from 'virtual:iwsdk-project';
-import { prepareAudio } from './audio/app-audio.js';
+import { music, prepareAudio } from './audio/app-audio.js';
 import { SectionsSystem } from './systems/sections.js';
 import { WholeBallSystem } from './systems/whole-ball.js';
 
@@ -15,7 +15,7 @@ World.create(
   world.registerSystem(SectionsSystem);
   // Development only: lets the browser console inspect the running world.
   if (import.meta.env.DEV) {
-    (window as unknown as { __world: unknown }).__world = world;
+    Object.assign(window, { __world: world, __music: music });
     if (new URLSearchParams(location.search).has('grabtest')) {
       void import('./dev/grab-test.js').then((m) => world.registerSystem(m.GrabTestSystem));
     }

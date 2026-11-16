@@ -18,6 +18,8 @@ export const music = new StemPlayer(
 export function prepareAudio(): void {
   void music.load().then(() => {
     for (const s of mozart40.sections) music.setGain(s.id, s.gain, 0);
+    // Development only: ?mute runs everything silently (automated tests).
+    if (import.meta.env.DEV && new URLSearchParams(location.search).has('mute')) music.setMasterGain(0);
   });
   const unlock = () => music.unlock();
   for (const type of ['pointerdown', 'keydown', 'touchend'] as const) {
