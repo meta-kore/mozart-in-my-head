@@ -58,6 +58,9 @@ interface SectionView {
   /** Slow-moving loudness, to spot note attacks as sudden rises above it. */
   slowDb: number;
   lastSpark: number;
+  /** True while floating back into the comfortable zone after a release. */
+  returning: boolean;
+  returnTo: Vector3;
 }
 
 /** A note attack: loudness this many dB above its recent average... */
@@ -68,6 +71,26 @@ const ONSET_MIN_DB = -40;
 const SPARK_REFRACTORY = 0.25;
 /** While one section is soloed, the others' glow dims to this. */
 const DUCKED_GLOW = 0.35;
+
+/** Comfort: a released ball beyond this distance from the head floats back to it. */
+const REACH = 0.58;
+/** Within this distance of the head (e.g. held at an ear) a ball may sit level with the ears... */
+const NEAR_HEAD = 0.3;
+/** ...but no further behind them than this. */
+const NEAR_HEAD_MIN_FORWARD = -0.08;
+/** A ball left behind the player is brought round to this far in front. */
+const RETURN_AHEAD = 0.25;
+/** Further out than NEAR_HEAD, a ball must sit at least this far in front of the head. */
+const MIN_FORWARD = 0.05;
+/** How quickly an out-of-reach ball floats back (per second). */
+const COMFORT_RATE = 4;
+
+/** Apart-state lessons, shown one at a time as each is learned. */
+const HINTS = [
+  ['Pinch a section and move it.', 'Its sound moves with it.'],
+  ['Hold one up to your ear', 'to hear it alone.'],
+  ['Bring two together', 'to put it back.'],
+] as const;
 
 /**
  * The Apart state: seven orchestral sections, each a small glowing ball with
@@ -88,6 +111,14 @@ export class SectionsSystem extends createSystem({
   /** Index of the soloed section, or -1. */
   private solo = -1;
   private sparks!: Sparks;
+  private hint!: TextPanel;
+  /** Index into HINTS of the next lesson; HINTS.length when all are learned. */
+  private hintStage = 0;
+  private shownHint = -1;
+  private readonly hintPos = new Vector3();
+  private readonly offset = new Vector3();
+  private readonly target = new Vector3();
+  private presenting = false;
   private readonly earDistances: number[] = [];
   private readonly earL = new Vector3();
   private readonly earR = new Vector3();
@@ -137,17 +168,27 @@ export class SectionsSystem extends createSystem({
         duck: 1,
         slowDb: -60,
         lastSpark: 0,
+        returning: false,
+        returnTo: new Vector3(),
       });
     });
 
     this.sparks = new Sparks();
     this.world.createTransformEntity(this.sparks.root, { persistent: true });
 
+    this.hint = createTextPanel(0.34, 1024, 220);
+    this.hint.mesh.name = 'ApartHint';
+    this.hint.mesh.raycast = () => {};
+    this.hint.mesh.visible = false;
+    this.world.createTransformEntity(this.hint.mesh, { persistent: true });
+
     // A ball that is picked up mid-flight stays with the hand.
     this.cleanupFuncs.push(
       this.queries.held.subscribe('qualify', (e) => {
         const v = this.views[e.getValue(SectionBall, 'index') ?? 0];
         v.to.copy(v.ball.root.position);
+        v.returning = false;
+        if (this.hintStage === 0) this.hintStage = 1;
       }),
     );
 
@@ -171,6 +212,7 @@ export class SectionsSystem extends createSystem({
     const whole = this.wholeEntity();
     if (!whole) return;
     const presenting = readViewer(this, this.head, this.headQuat);
+    this.presenting = presenting;
     const state = whole.getValue(MusicBall, 'state') as string;
     whole.object3D?.getWorldPosition(this.wholePos);
 
@@ -187,6 +229,7 @@ export class SectionsSystem extends createSystem({
         music.setGain(v.section.id, v.section.gain * g, 0.03);
       }
       this.solo = -1;
+      this.hint.mesh.visible = false;
       return;
     }
 
@@ -217,13 +260,19 @@ export class SectionsSystem extends createSystem({
     this.earR.copy(this.head).addScaledVector(this.right, EAR_OFFSET);
     this.views.forEach((v, i) => {
       const p = v.ball.root.position;
-      this.earDistances[i] = Math.min(p.distanceTo(this.earL), p.distanceTo(this.earR));
+      // A ball floating back after a release never solos on the way past an ear.
+      this.earDistances[i] = v.returning ? Infinity : Math.min(p.distanceTo(this.earL), p.distanceTo(this.earR));
     });
     this.solo = this.flight < 0 && !this.merging ? chooseSolo(this.solo, this.earDistances) : -1;
+    if (this.solo >= 0 && this.hintStage === 1) this.hintStage = 2;
+    this.updateHint();
 
     for (let i = 0; i < this.views.length; i++) {
       const v = this.views[i];
       const root = v.ball.root;
+      if (this.flight < 0 && !this.merging && this.presenting && !v.entity.hasComponent(Grabbed)) {
+        this.keepInReach(v, delta);
+      }
       root.getWorldPosition(this.pos);
 
       // Volume: the section's balance, its distance from the head, and any solo duck.
@@ -257,6 +306,64 @@ export class SectionsSystem extends createSystem({
     }
   }
 
+  /**
+   * Comfort: a released ball out of reach or behind the player floats back.
+   * Where it goes is decided once, so it travels in one smooth move and
+   * never settles somewhere awkward (such as beside an ear) on the way.
+   */
+  private keepInReach(v: SectionView, delta: number): void {
+    const p = v.ball.root.position;
+    if (!v.returning) {
+      if (!this.comfortTarget(p, this.target)) return;
+      v.returnTo.copy(this.target);
+      v.returning = true;
+    }
+    p.lerp(v.returnTo, 1 - Math.exp(-COMFORT_RATE * delta));
+    if (p.distanceToSquared(v.returnTo) < 0.005 * 0.005) {
+      p.copy(v.returnTo);
+      v.returning = false;
+    }
+  }
+
+  /** Where a ball at `p` should be for comfort; false if it is fine where it is. */
+  private comfortTarget(p: Vector3, out: Vector3): boolean {
+    out.copy(p);
+    this.offset.subVectors(out, this.head);
+    let d = this.offset.length();
+    const ahead = this.offset.dot(this.fwd);
+    if (ahead < NEAR_HEAD_MIN_FORWARD) {
+      // Behind the player: bring it round to well in front.
+      out.addScaledVector(this.fwd, RETURN_AHEAD - ahead);
+    } else if (d > NEAR_HEAD && ahead < MIN_FORWARD) {
+      // Out to the side: nudge it forward.
+      out.addScaledVector(this.fwd, MIN_FORWARD - ahead);
+    }
+    this.offset.subVectors(out, this.head);
+    d = this.offset.length();
+    if (d > REACH) out.copy(this.head).addScaledVector(this.offset, REACH / d);
+    return out.distanceToSquared(p) > 0.005 * 0.005;
+  }
+
+  /** Show the next lesson above the arc, or nothing once all are learned. */
+  private updateHint(): void {
+    const panel = this.hint.mesh;
+    if (this.hintStage >= HINTS.length) {
+      panel.visible = false;
+      return;
+    }
+    if (this.shownHint !== this.hintStage) {
+      const [a, b] = HINTS[this.hintStage];
+      this.hint.setText([
+        { text: a, size: 64 },
+        { text: b, size: 52, colour: '#c9cbd8' },
+      ]);
+      this.shownHint = this.hintStage;
+    }
+    panel.visible = true;
+    panel.position.copy(this.hintPos);
+    faceViewer(panel, this.head);
+  }
+
   private beginSplit(presenting: boolean): void {
     this.merging = false;
     const radius = presenting ? ARC_RADIUS : DESKTOP_ARC_RADIUS;
@@ -270,6 +377,8 @@ export class SectionsSystem extends createSystem({
     if (this.fwd.lengthSq() < 1e-4) this.fwd.set(0, 0, -1);
     this.fwd.normalize();
     this.right.set(-this.fwd.z, 0, this.fwd.x);
+    this.hintPos.copy(this.head).addScaledVector(this.fwd, radius * 1.05);
+    this.hintPos.y = this.head.y - below + 0.21;
 
     for (const v of this.views) {
       const a = (v.section.seat * span) / 2;
@@ -325,6 +434,8 @@ export class SectionsSystem extends createSystem({
 
   private finishMerge(whole: Entity): void {
     this.merging = false;
+    if (this.hintStage === 2) this.hintStage = 3;
+    this.hint.mesh.visible = false;
     this.sparks.hideAll();
     for (const v of this.views) {
       v.ball.root.visible = false;

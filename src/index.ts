@@ -15,7 +15,7 @@ World.create(
   world.registerSystem(SectionsSystem);
   // Development only: lets the browser console inspect the running world.
   if (import.meta.env.DEV) {
-    Object.assign(window, { __world: world, __music: music });
+    Object.assign(window, { __world: world, __music: music, __sections: world.getSystem(SectionsSystem) });
     if (new URLSearchParams(location.search).has('grabtest')) {
       void import('./dev/grab-test.js').then((m) => world.registerSystem(m.GrabTestSystem));
     }

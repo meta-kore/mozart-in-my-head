@@ -314,10 +314,18 @@ export class WholeBallSystem extends createSystem({
   private setHint(kind: 'pull' | 'hold'): void {
     if (this.hintShown === kind) return;
     this.hintShown = kind;
-    this.label.setText([
-      { text: kind === 'hold' ? 'Keep holding to open it up…' : 'Take it in both hands and pull.', size: 64 },
-      { text: CREDIT, size: 26, colour: '#9a9db0' },
-    ]);
+    this.label.setText(
+      kind === 'hold'
+        ? [
+            { text: 'Keep holding to open it up…', size: 64 },
+            { text: CREDIT, size: 26, colour: '#9a9db0' },
+          ]
+        : [
+            { text: 'Take it in both hands and pull.', size: 64 },
+            { text: 'or pinch and hold it with one hand', size: 40, colour: '#c9cbd8' },
+            { text: CREDIT, size: 26, colour: '#9a9db0' },
+          ],
+    );
   }
 
   /** A fingertip touching the ball, or a pinch / trigger with the hand at the ball. */
