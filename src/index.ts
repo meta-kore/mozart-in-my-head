@@ -16,6 +16,9 @@ World.create(
   // Development only: lets the browser console inspect the running world.
   if (import.meta.env.DEV) {
     Object.assign(window, { __world: world, __music: music, __sections: world.getSystem(SectionsSystem) });
+    if (new URLSearchParams(location.search).has('demo')) {
+      void import('./dev/demo.js').then((m) => m.installDemo(world));
+    }
     if (new URLSearchParams(location.search).has('grabtest')) {
       void import('./dev/grab-test.js').then((m) => world.registerSystem(m.GrabTestSystem));
     }
