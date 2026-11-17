@@ -3,6 +3,7 @@ import projectOptions from 'virtual:iwsdk-project';
 import { music, prepareAudio } from './audio/app-audio.js';
 import { GuideSystem } from './systems/guide.js';
 import { HallLightingSystem } from './systems/hall-lighting.js';
+import { PauseSystem } from './systems/pause.js';
 import { SectionsSystem } from './systems/sections.js';
 import { WholeBallSystem } from './systems/whole-ball.js';
 
@@ -41,6 +42,7 @@ void loadFonts().then(() =>
     world.registerSystem(SectionsSystem);
     world.registerSystem(GuideSystem);
     world.registerSystem(HallLightingSystem);
+    world.registerSystem(PauseSystem);
     // Development only: lets the browser console inspect the running world.
     if (import.meta.env.DEV) {
       Object.assign(window, {

@@ -20,6 +20,7 @@ Sit comfortably. Everything is within arm's reach, and hands are all you need.
 | Move a section | Pinch its ball and carry it | Grip button | Drag it; scroll to move it nearer or further |
 | Hear one section alone | Hold its ball beside your ear | Same | Click it (click again to stop) |
 | Put it back together | Bring any two balls together | Same | Drag one onto another (or **S**) |
+| Pause and play | Touch **Pause music** under the ball (or under the sections), or press the Meta button | Trigger on the button | Click the button, or press **Space** |
 
 The sections, left to right as they first appear: first violins, second violins, flute and oboes, clarinets and bassoons, horns, violas, cellos and basses. Each has its own colour and name label. Each section's ball glows with its own loudness and throws sparks on its notes, so you can see who is playing. A section gets quieter as you move it away from you, and is never silent.
 

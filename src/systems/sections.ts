@@ -74,8 +74,12 @@ const COMFORT_RATE = 4;
 
 /** Desktop: a click lands on a ball when within this many pixels of its centre. */
 const PICK_PIXELS = 42;
+/** Desktop: while dragging, the ball stays at least this many pixels inside the view. */
+const DRAG_MARGIN = 30;
 /** Desktop: the mouse wheel moves a ball nearer or further, within these distances of the eye. */
 const DESKTOP_NEAR = 0.3;
+/** Desktop: balls stay inside this part of the view (normalised screen coordinates, 1 = edge). */
+const VIEW_EDGE = 0.9;
 const DESKTOP_FAR = 1.3;
 
 interface SectionView {
@@ -392,6 +396,8 @@ export class SectionsSystem extends createSystem({
       const root = v.ball.root;
       if (this.flight < 0 && !this.merging && this.presenting && !v.entity.hasComponent(Grabbed)) {
         this.keepInReach(v, delta);
+      } else if (this.flight < 0 && !this.merging && !this.presenting && i !== this.dragIndex) {
+        this.keepInView(v, delta);
       }
       root.getWorldPosition(this.pos);
 
@@ -474,6 +480,30 @@ export class SectionsSystem extends createSystem({
       p.copy(v.returnTo);
       v.returning = false;
     }
+  }
+
+  /**
+   * Computer: a ball left outside the view (or too far away) floats back to
+   * the nearest spot inside it, at the same distance, so none is ever lost.
+   */
+  private keepInView(v: SectionView, delta: number): void {
+    const p = v.ball.root.position;
+    this.ndc.copy(p).project(this.camera);
+    const behind = this.ndc.z > 1;
+    const x = Math.max(-VIEW_EDGE, Math.min(VIEW_EDGE, this.ndc.x));
+    const y = Math.max(-VIEW_EDGE, Math.min(VIEW_EDGE, this.ndc.y));
+    if (!behind && x === this.ndc.x && y === this.ndc.y) {
+      v.returning = false;
+      return;
+    }
+    if (behind) {
+      this.target.copy(v.to); // its seat in the arc
+    } else {
+      this.ndc.x = x;
+      this.ndc.y = y;
+      this.target.copy(this.ndc.unproject(this.camera));
+    }
+    p.lerp(this.target, 1 - Math.exp(-COMFORT_RATE * delta));
   }
 
   /** Where a ball at `p` should be for comfort; false if it is fine where it is. */
@@ -621,7 +651,11 @@ export class SectionsSystem extends createSystem({
       }
       if (Math.hypot(e.clientX - this.dragStartX, e.clientY - this.dragStartY) > 5) this.dragMoved = true;
       if (!this.dragMoved) return;
-      this.toNdc(e.clientX, e.clientY, this.dragDepth);
+      // Keep the ball inside the view even if the pointer leaves it.
+      const rect = canvas.getBoundingClientRect();
+      const cx = Math.max(rect.left + DRAG_MARGIN, Math.min(rect.right - DRAG_MARGIN, e.clientX));
+      const cy = Math.max(rect.top + DRAG_MARGIN, Math.min(rect.bottom - DRAG_MARGIN, e.clientY));
+      this.toNdc(cx, cy, this.dragDepth);
       this.views[this.dragIndex].ball.root.position.copy(this.ndc.unproject(this.camera));
     };
     const up = (e: PointerEvent) => {

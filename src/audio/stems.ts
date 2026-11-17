@@ -168,6 +168,11 @@ export class StemPlayer {
     }
   }
 
+  /** True while the listener has paused the music. */
+  get paused(): boolean {
+    return this.userPaused;
+  }
+
   async pause(): Promise<void> {
     this.userPaused = true;
     await this.ctx?.suspend();
