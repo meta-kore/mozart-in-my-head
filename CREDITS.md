@@ -24,6 +24,18 @@ The repository also contains a synthesised fallback that plays **J. S. Bach's Fu
 
 `src/music/fugue.ts` is generated from the copy in `scripts/source/wtk1-fugue1.ly` by `scripts/ly-to-fugue.mjs`.
 
+### Listening guide and sound effects
+
+The guide's passage timings (`src/music/mozart40-guide.ts`) were read from the loudness of each section stem; the descriptions follow the standard analysis of the score and are written for this app. The interaction sounds (`src/audio/cues.ts`) are synthesised in the browser from oscillators and noise; there are no sound-effect files.
+
+## Font
+
+- **Cormorant Garamond** by Christian Thalmann (the Cormorant Project), SIL Open Font License 1.1. Subset to Latin and converted to WOFF2 in `public/fonts/`; the licence is in `public/fonts/OFL.txt`.
+
+## 3D
+
+Everything in the scene (the concert hall, the instrument emblems, the glass orbs) is built in code in this repository (`src/scene-assets/`, `src/visuals/`). No third-party models or textures.
+
 ## Software
 
 - [Immersive Web SDK](https://github.com/facebook/immersive-web-sdk) by Meta, MIT licence. Parts of `vite.config.ts` and the project setup come from its starter template.
