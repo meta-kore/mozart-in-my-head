@@ -1,0 +1,108 @@
+{
+  "version": "iwsdk.scene.v1",
+  "units": "meters",
+  "components": {
+    "com.iwsdk.components.DomeGradient": {
+      "sky": [
+        0.02,
+        0.025,
+        0.05,
+        1
+      ],
+      "equator": [
+        0.06,
+        0.065,
+        0.11,
+        1
+      ],
+      "ground": [
+        0.03,
+        0.03,
+        0.045,
+        1
+      ],
+      "elevationDeg": 10,
+      "azimuthDeg": 0,
+      "dither": true
+    },
+    "com.iwsdk.components.IBLGradient": {
+      "sky": [
+        0.3,
+        0.32,
+        0.45,
+        1
+      ],
+      "equator": [
+        0.2,
+        0.2,
+        0.3,
+        1
+      ],
+      "ground": [
+        0.08,
+        0.08,
+        0.1,
+        1
+      ],
+      "intensity": 0.3
+    }
+  },
+  "environment": {
+    "toneMapping": "aces",
+    "exposure": 1.0,
+    "shadows": false
+  },
+  "resources": {},
+  "nodes": [
+    {
+      "id": "concert-hall",
+      "name": "Concert Hall",
+      "framingRole": "support",
+      "content": {
+        "type": "asset",
+        "asset": "concert-hall"
+      }
+    },
+    {
+      "id": "fill-light",
+      "name": "Fill Light",
+      "components": {
+        "HemisphereLight": {
+          "skyColor": [
+            0.55,
+            0.6,
+            0.85,
+            1
+          ],
+          "groundColor": [
+            0.12,
+            0.12,
+            0.16,
+            1
+          ],
+          "intensity": 0.8
+        }
+      }
+    }
+  ],
+  "authoring": {
+    "views": [
+      {
+        "id": "hero",
+        "role": "hero",
+        "projection": "perspective",
+        "position": [
+          0,
+          1.2,
+          0.15
+        ],
+        "target": [
+          0,
+          1.4,
+          -4
+        ],
+        "fov": 80
+      }
+    ]
+  }
+}

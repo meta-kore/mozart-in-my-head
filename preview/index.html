@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, shrink-to-fit=no"
+    />
+    <meta
+      name="description"
+      content="A hands-first VR music toy: pull Mozart's Symphony No. 40 apart into the sections of the orchestra and place them around you."
+    />
+    <link rel="icon" href="data:," />
+    <title>Mozart in My Head</title>
+    <style>
+      body { margin: 0; background: #05060b; }
+      /* Shown on the flat page only; a headset does not draw the page in VR. */
+      #intro {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 16px 16px 20px;
+        text-align: center;
+        font: 15px/1.45 system-ui, 'Segoe UI', Roboto, sans-serif;
+        color: #c9cbd8;
+        background: linear-gradient(to top, rgba(5, 6, 11, 0.9), rgba(5, 6, 11, 0));
+        pointer-events: none;
+      }
+      #intro h1 { margin: 0 0 4px; font: 600 26px/1.2 'Cormorant Garamond', Georgia, serif; color: #f3d9a4; }
+      #intro p { margin: 0 auto; max-width: 40em; }
+      #intro { transition: padding 0.6s; }
+      #intro.compact p:not(.credit) { display: none; }
+      #intro.compact h1 { font-size: 15px; }
+      #intro .status { margin-top: 6px; font-size: 13px; color: #f3d9a4; }
+      #intro .credit { margin-top: 8px; font-size: 12px; color: #8a8da0; }
+    </style>
+    <script type="module" crossorigin src="./assets/index-l38tI7Ug.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/stems-CYSYOZs2.js">
+  </head>
+  <body>
+    <div id="scene-container"></div>
+    <div id="intro">
+      <h1>Mozart in My Head</h1>
+      <p>Pull an orchestra apart with your hands: Mozart's Symphony No. 40, or Tchaikovsky's Romeo and Juliet. Best on a Meta Quest: press <strong>Enter XR</strong>, sit back, and use your hands. On a computer: click the ball to start, click again to open it up, then drag the sections around, scroll to move them nearer, and click one to hear it alone. The cards under the ball switch the music; Space (or the button between them) pauses.</p>
+      <p class="status" id="load-status">Tuning the orchestra…</p>
+      <p class="credit">Mozart, Symphony No. 40 and Tchaikovsky, Romeo and Juliet · Colibrì Ensemble · The Spheres Dataset · CC BY-SA 4.0</p>
+    </div>
+  </body>
+</html>

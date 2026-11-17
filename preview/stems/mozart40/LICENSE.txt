@@ -1,0 +1,14 @@
+The audio files in this folder are licensed under the Creative Commons
+Attribution-ShareAlike 4.0 International licence (CC BY-SA 4.0):
+https://creativecommons.org/licenses/by-sa/4.0/
+
+They are adapted from The Spheres Dataset, a recording of W. A. Mozart's
+Symphony No. 40 in G minor, K. 550, performed by the Colibrì Ensemble:
+https://zenodo.org/records/17347681
+
+Changes: instrument lines folded to mono and summed into seven sections, the
+opening 123.55 seconds (first-movement exposition) cut as a seamless loop, one
+common gain applied, and encoded as Ogg Opus.
+
+This licence covers these audio files only. The software in this repository
+is under the MIT licence (see LICENSE at the repository root).
