@@ -252,6 +252,16 @@ export class StemPlayer {
     return this.loopSeconds;
   }
 
+  /** The audio context, once created (for sound effects that share the mix). */
+  get context(): AudioContext | null {
+    return this.ctx;
+  }
+
+  /** The master bus; effects connected here follow the master volume. */
+  get output(): AudioNode | null {
+    return this.ctx ? this.master : null;
+  }
+
   /** Memory used by the decoded audio, in megabytes. */
   decodedMegabytes(): number {
     let bytes = 0;

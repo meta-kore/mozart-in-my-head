@@ -95,16 +95,38 @@ export function createGlowBall(diameter: number, colour: string, segments = 32):
   };
 }
 
+export interface TextLine {
+  text: string;
+  /** Font size in canvas pixels. */
+  size: number;
+  colour?: string;
+  /** 'serif' uses the bundled Cormorant Garamond, for titles. */
+  font?: 'serif' | 'sans';
+  weight?: number;
+  /** Extra space above this line, as a fraction of its size. */
+  gap?: number;
+}
+
 export interface TextPanel {
   mesh: Mesh<PlaneGeometry, MeshBasicMaterial>;
-  setText(lines: { text: string; size: number; colour?: string }[]): void;
+  setText(lines: TextLine[]): void;
 }
+
+/** The bundled title font's family name (loaded in index.ts). */
+export const SERIF = '"Cormorant Garamond", Georgia, "Times New Roman", serif';
+const SANS = 'system-ui, "Segoe UI", Roboto, sans-serif';
 
 /**
  * A flat text label drawn to a canvas texture. `width` is in metres; the
- * height follows the canvas aspect.
+ * height follows the canvas aspect. With `plate`, the text sits on a soft
+ * dark rounded panel so it stays readable over the concert hall.
  */
-export function createTextPanel(width: number, pixelWidth = 1024, pixelHeight = 256): TextPanel {
+export function createTextPanel(
+  width: number,
+  pixelWidth = 1024,
+  pixelHeight = 256,
+  options: { plate?: boolean } = {},
+): TextPanel {
   const canvas = document.createElement('canvas');
   canvas.width = pixelWidth;
   canvas.height = pixelHeight;
@@ -117,23 +139,45 @@ export function createTextPanel(width: number, pixelWidth = 1024, pixelHeight = 
     new MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false }),
   );
 
+  const lineHeight = (l: TextLine) => l.size * (1.3 + (l.gap ?? 0));
   return {
     mesh,
     setText(lines) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const total = lines.reduce((h, l) => h + lineHeight(l), 0);
+      if (options.plate && lines.length > 0) {
+        // Fit the plate to the text block.
+        let w = 0;
+        for (const l of lines) {
+          ctx.font = `${l.weight ?? 500} ${l.size}px ${l.font === 'serif' ? SERIF : SANS}`;
+          w = Math.max(w, ctx.measureText(l.text).width);
+        }
+        const pw = Math.min(canvas.width - 8, w + 90);
+        const ph = Math.min(canvas.height - 8, total + 50);
+        const x = (canvas.width - pw) / 2;
+        const y = (canvas.height - ph) / 2;
+        ctx.beginPath();
+        ctx.roundRect(x, y, pw, ph, Math.min(40, ph / 2));
+        ctx.fillStyle = 'rgba(8, 9, 18, 0.62)';
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(255, 226, 168, 0.18)';
+        ctx.stroke();
+      }
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const total = lines.reduce((h, l) => h + l.size * 1.35, 0);
       let y = (canvas.height - total) / 2;
       for (const l of lines) {
-        y += (l.size * 1.35) / 2;
-        ctx.font = `500 ${l.size}px system-ui, "Segoe UI", Roboto, sans-serif`;
+        const h = lineHeight(l);
+        y += h - l.size * 0.65;
+        ctx.font = `${l.weight ?? 500} ${l.size}px ${l.font === 'serif' ? SERIF : SANS}`;
         ctx.fillStyle = l.colour ?? '#e8e9f0';
         ctx.shadowColor = 'rgba(0,0,0,0.6)';
         ctx.shadowBlur = 8;
         ctx.fillText(l.text, canvas.width / 2, y);
-        y += (l.size * 1.35) / 2;
+        y += l.size * 0.65;
       }
+      ctx.shadowBlur = 0;
       texture.needsUpdate = true;
     },
   };

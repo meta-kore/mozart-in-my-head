@@ -27,8 +27,12 @@
         background: linear-gradient(to top, rgba(5, 6, 11, 0.9), rgba(5, 6, 11, 0));
         pointer-events: none;
       }
-      #intro h1 { margin: 0 0 4px; font-size: 20px; font-weight: 600; color: #f1e6cc; }
+      #intro h1 { margin: 0 0 4px; font: 600 26px/1.2 'Cormorant Garamond', Georgia, serif; color: #f3d9a4; }
       #intro p { margin: 0 auto; max-width: 40em; }
+      #intro { transition: padding 0.6s; }
+      #intro.compact p:not(.credit) { display: none; }
+      #intro.compact h1 { font-size: 15px; }
+      #intro .status { margin-top: 6px; font-size: 13px; color: #f3d9a4; }
       #intro .credit { margin-top: 8px; font-size: 12px; color: #8a8da0; }
     </style>
   </head>
@@ -36,7 +40,8 @@
     <div id="scene-container"></div>
     <div id="intro">
       <h1>Mozart in My Head</h1>
-      <p>Pull a symphony apart with your hands. Best on a Meta Quest: press <strong>Enter XR</strong>, sit back, and use your hands. On a computer, click the ball, then press <strong>S</strong> to split and merge.</p>
+      <p>Pull a symphony apart with your hands. Best on a Meta Quest: press <strong>Enter XR</strong>, sit back, and use your hands. On a computer: click the ball to start, click again to open it up, then drag the sections around, scroll to move them nearer, and click one to hear it alone.</p>
+      <p class="status" id="load-status">Tuning the orchestra…</p>
       <p class="credit">Mozart, Symphony No. 40 · Colibrì Ensemble · The Spheres Dataset · CC BY-SA 4.0</p>
     </div>
     <script type="module" src="/src/index.ts"></script>

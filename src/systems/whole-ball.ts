@@ -7,9 +7,11 @@ import {
   Vector3,
   VisibilityState,
 } from '@iwsdk/core';
-import { music } from '../audio/app-audio.js';
+import { loadProgress, music } from '../audio/app-audio.js';
 import { BallStates, MusicBall } from '../components.js';
-import { createGlowBall, createTextPanel, type GlowBall, type TextPanel } from '../visuals/glow-ball.js';
+import { mozart40 } from '../music/mozart40.js';
+import { createTextPanel, type TextLine, type TextPanel } from '../visuals/glow-ball.js';
+import { createWholeOrb, type WholeOrb } from '../visuals/whole-orb.js';
 import { faceViewer, readViewer } from './viewer.js';
 
 /** Starting values from CLAUDE.md; tune on a headset. */
@@ -19,7 +21,7 @@ const BALL_FORWARD = 0.45;
 /** How far below eye level the ball floats (roughly chest height). */
 const BALL_BELOW_EYES = 0.3;
 /** Space between the top of the ball and the hint text's centre. */
-const LABEL_GAP = 0.07;
+const LABEL_GAP = 0.1;
 /** Outside XR (desktop development), distance along the line of sight. */
 const DESKTOP_DISTANCE = 0.85;
 /** A fingertip this close to the ball's surface counts as a touch. */
@@ -36,8 +38,9 @@ const ONE_HAND_HOLD_SECONDS = 1.5;
 const MAX_STRETCH = 2.4;
 /** How quickly the ball springs back home when let go (per second). */
 const SPRING_RATE = 7;
-const WHOLE_COLOUR = '#ffe2a8';
 const CREDIT = 'Mozart · Symphony No. 40 · Colibrì Ensemble · The Spheres Dataset · CC BY-SA 4.0';
+const CREDIT_LINE: TextLine = { text: CREDIT, size: 24, colour: '#9a9db0', gap: 0.5 };
+const GOLD = '#f3d9a4';
 
 const SIDES = ['left', 'right'] as const;
 
@@ -51,7 +54,9 @@ export class WholeBallSystem extends createSystem({
   balls: { required: [MusicBall] },
   pressed: { required: [MusicBall, Pressed] },
 }) {
-  private ball!: GlowBall;
+  private ball!: WholeOrb;
+  /** Each section's loudness (0..1), for the lights inside the orb. */
+  private readonly levels: number[] = mozart40.sections.map(() => 0);
   private label!: TextPanel;
   private ballEntity!: Entity;
   private labelEntity!: Entity;
@@ -72,7 +77,9 @@ export class WholeBallSystem extends createSystem({
   private wasBoth = false;
   /** 0..1, how close the current pull or hold is to splitting. */
   private splitProgress = 0;
-  private hintShown: 'pull' | 'hold' | null = null;
+  private hintShown: 'pull' | 'hold' | 'click' | null = null;
+  /** What the idle label shows: a loading count, or the invitation (and for which input). */
+  private idleShown = '';
   private readonly tipL = new Vector3();
   private readonly tipR = new Vector3();
   private readonly axis = new Vector3();
@@ -91,13 +98,13 @@ export class WholeBallSystem extends createSystem({
   private readonly audioUp = { x: 0, y: 1, z: 0 };
 
   init(): void {
-    this.ball = createGlowBall(BALL_DIAMETER, WHOLE_COLOUR);
+    this.ball = createWholeOrb(BALL_DIAMETER, mozart40.sections.map((s) => s.colour));
     this.ball.root.name = 'WholeBall';
     this.ballEntity = this.world.createTransformEntity(this.ball.root, { persistent: true });
     this.ballEntity.addComponent(MusicBall, { state: BallStates.Idle, diameter: BALL_DIAMETER });
     this.ballEntity.addComponent(RayInteractable);
 
-    this.label = createTextPanel(0.42);
+    this.label = createTextPanel(0.44, 1024, 330, { plate: true });
     this.label.mesh.name = 'WholeBallLabel';
     this.label.mesh.raycast = () => {}; // text is not a target
     this.labelEntity = this.world.createTransformEntity(this.label.mesh, { persistent: true });
@@ -174,8 +181,11 @@ export class WholeBallSystem extends createSystem({
     } else if (state === BallStates.Idle) {
       if (this.handActivated()) this.onActivate();
       if (this.pendingStart && music.loaded) this.startMusic();
+      if (!this.pendingStart) this.showIdleText();
       // Gentle breathing glow while silent.
       this.ball.setIntensity(0.12 + 0.1 * Math.sin(time * 1.6));
+      for (let i = 0; i < this.levels.length; i++) this.levels[i] = 0.15 + 0.1 * Math.sin(time * 1.3 + i);
+      this.ball.animate(time, delta, this.levels);
     } else {
       // Fast attack, slower release, so the ball pulses with the music.
       // Decibel scale: -45 dB (near silence) maps to 0, -15 dB (loud tutti) to 1.
@@ -186,6 +196,11 @@ export class WholeBallSystem extends createSystem({
       this.updateGestures(delta);
       // The pull or hold brightens the ball on top of the music's pulse.
       this.ball.setIntensity(Math.min(1, this.level + 0.8 * this.splitProgress));
+      for (let i = 0; i < this.levels.length; i++) {
+        const sdb = 20 * Math.log10(music.level(mozart40.sections[i].id) + 1e-6);
+        this.levels[i] = Math.max(0, Math.min(1, (sdb + 48) / 30));
+      }
+      this.ball.animate(time, delta, this.levels);
     }
 
     // Sound comes from the ball; the listener is the head.
@@ -311,21 +326,25 @@ export class WholeBallSystem extends createSystem({
     this.ballEntity.setValue(MusicBall, 'state', BallStates.Apart);
   }
 
-  private setHint(kind: 'pull' | 'hold'): void {
+  private setHint(kind: 'pull' | 'hold' | 'click'): void {
+    // On a computer there are no hands: invite a click instead.
+    if (kind === 'pull' && !this.wasImmersive) kind = 'click';
     if (this.hintShown === kind) return;
     this.hintShown = kind;
-    this.label.setText(
-      kind === 'hold'
-        ? [
-            { text: 'Keep holding to open it up…', size: 64 },
-            { text: CREDIT, size: 26, colour: '#9a9db0' },
-          ]
-        : [
-            { text: 'Take it in both hands and pull.', size: 64 },
-            { text: 'or pinch and hold it with one hand', size: 40, colour: '#c9cbd8' },
-            { text: CREDIT, size: 26, colour: '#9a9db0' },
-          ],
-    );
+    const lines: Record<typeof kind, TextLine[]> = {
+      hold: [{ text: 'Keep holding to open it up…', size: 60 }, CREDIT_LINE],
+      pull: [
+        { text: 'Take it in both hands and pull.', size: 60 },
+        { text: 'or pinch and hold it with one hand', size: 38, colour: '#c9cbd8' },
+        CREDIT_LINE,
+      ],
+      click: [
+        { text: 'Click the ball to open it up.', size: 60 },
+        { text: 'In a headset: take it in both hands and pull.', size: 38, colour: '#c9cbd8' },
+        CREDIT_LINE,
+      ],
+    };
+    this.label.setText(lines[kind]);
   }
 
   /** A fingertip touching the ball, or a pinch / trigger with the hand at the ball. */
@@ -347,16 +366,19 @@ export class WholeBallSystem extends createSystem({
   private onActivate(): void {
     const state = this.ballEntity.getValue(MusicBall, 'state');
     if (state !== BallStates.Idle) {
-      // After a session ended on desktop, a click brings the music back.
+      // After a session ended on desktop, a click brings the music back...
       void music.setAppVisible(true);
+      // ...and on a computer, clicking the playing ball opens it up.
+      if (state === BallStates.Playing && !this.world.session) this.split();
       return;
     }
     this.pendingStart = true;
     music.unlock(); // harmless inside VR; a real gesture on desktop
     if (music.loaded) this.startMusic();
     else this.label.setText([
-      { text: 'Tuning the orchestra…', size: 64 },
-      { text: CREDIT, size: 26, colour: '#9a9db0' },
+      { text: 'Tuning the orchestra…', size: 60 },
+      { text: 'The music starts in a moment.', size: 38, colour: '#c9cbd8' },
+      CREDIT_LINE,
     ]);
   }
 
@@ -368,10 +390,27 @@ export class WholeBallSystem extends createSystem({
     this.setHint('pull');
   }
 
+  /** The invitation, or loading progress while the music is still arriving. */
   private showIdleText(): void {
-    this.label.setText([
-      { text: 'Touch the ball to hear the orchestra.', size: 64 },
-      { text: CREDIT, size: 26, colour: '#9a9db0' },
-    ]);
+    const desk = !this.wasImmersive;
+    const key = loadProgress.failed ? 'failed' : music.loaded ? (desk ? 'desk' : 'xr') : `load${loadProgress.done}`;
+    if (key === this.idleShown) return;
+    this.idleShown = key;
+    const title: TextLine = { text: 'Mozart in My Head', size: 84, font: 'serif', weight: 600, colour: GOLD };
+    if (loadProgress.failed) {
+      this.label.setText([title, { text: 'The music could not load. Please reload the page.', size: 40 }, CREDIT_LINE]);
+    } else if (!music.loaded) {
+      this.label.setText([
+        title,
+        { text: `Tuning the orchestra… ${loadProgress.done} of ${loadProgress.total}`, size: 44 },
+        CREDIT_LINE,
+      ]);
+    } else {
+      this.label.setText([
+        title,
+        { text: desk ? 'Click the ball to hear the orchestra.' : 'Touch the ball to hear the orchestra.', size: 44 },
+        CREDIT_LINE,
+      ]);
+    }
   }
 }
