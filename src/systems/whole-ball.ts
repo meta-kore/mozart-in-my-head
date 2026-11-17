@@ -24,6 +24,8 @@ const BALL_BELOW_EYES = 0.3;
 const LABEL_GAP = 0.1;
 /** Outside XR (desktop development), distance along the line of sight. */
 const DESKTOP_DISTANCE = 0.85;
+/** Half the label's width (it is 0.44 m wide), for fitting it on narrow screens. */
+const LABEL_HALF_WIDTH = 0.23;
 /** A fingertip this close to the ball's surface counts as a touch. */
 const TOUCH_MARGIN = 0.015;
 /** A pinch or trigger press counts when the hand is this close to the ball's surface. */
@@ -62,6 +64,8 @@ export class WholeBallSystem extends createSystem({
   private labelEntity!: Entity;
 
   private placed = false;
+  /** The view's shape when the ball was placed (computer): re-place if the screen turns. */
+  private placedAspect = 0;
   /** Frames to wait after entering XR before trusting the head pose. */
   private placeAfterFrames = 0;
   private wasImmersive = false;
@@ -154,6 +158,9 @@ export class WholeBallSystem extends createSystem({
       if (!presenting && music.started) void music.setAppVisible(false);
     }
 
+    if (!presenting && this.placed && Math.abs(this.camera.aspect - this.placedAspect) > 0.05 && !this.holding.left && !this.holding.right) {
+      this.placed = false;
+    }
     if (!this.placed) {
       if (this.placeAfterFrames > 0) this.placeAfterFrames--;
       else this.placeInFrontOfHead();
@@ -233,8 +240,13 @@ export class WholeBallSystem extends createSystem({
   private placeInFrontOfHead(): void {
     this.forward.set(0, 0, -1).applyQuaternion(this.headQuat);
     if (!this.wasImmersive) {
-      // Desktop / flat view: centre the ball on the line of sight instead.
-      this.ball.root.position.copy(this.head).addScaledVector(this.forward, DESKTOP_DISTANCE);
+      // Desktop / flat view: centre the ball on the line of sight instead, far
+      // enough away that its label fits the width of the view (phones held
+      // upright are narrow).
+      const halfH = Math.atan(Math.tan((this.camera.fov * Math.PI) / 360) * this.camera.aspect);
+      const distance = Math.max(DESKTOP_DISTANCE, LABEL_HALF_WIDTH / Math.tan(halfH * 0.92));
+      this.ball.root.position.copy(this.head).addScaledVector(this.forward, distance);
+      this.placedAspect = this.camera.aspect;
       this.rest.copy(this.ball.root.position);
       this.placed = true;
       return;
