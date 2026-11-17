@@ -143,54 +143,57 @@ async function run(world: World, d: EmulatedDevice): Promise<void> {
   await Promise.all([L.move(restL, 1.2, 'grasp'), R.move(restR, 1.2, 'grasp')]);
   await wait(5);
 
-  // 3. Carry the violas to the right ear: they play alone.
-  let p = pos(world, 'Section:violas');
-  await R.move(p, 1.3, 'grasp');
+  // 3. Lesson: move a section (the horns, lifted up to the left).
+  let p = pos(world, 'Section:horns');
+  await R.move(p, 1.2, 'grasp');
   await R.pinch(1);
-  await Promise.all([R.move([0.16, eyes - 0.01, -0.03], 2.2), lookYaw(d, 12)]);
-  await wait(6);
-  await Promise.all([R.move([0.3, eyes - 0.12, -0.36], 1.8), lookYaw(d, 0)]);
+  await R.move([-0.25, eyes - 0.05, -0.33], 1.8);
   await R.pinch(0);
   await R.move(restR, 1.1);
   await wait(2.5);
 
-  // 4. The first violins to the left ear.
+  // 4. Lesson: hold one to your ear (the cellos and basses), then put it back.
+  p = pos(world, 'Section:cellos-basses');
+  await R.move(p, 1.2, 'grasp');
+  await R.pinch(1);
+  await Promise.all([R.move([0.16, eyes - 0.01, -0.03], 2.0), lookYaw(d, 12)]);
+  await wait(3.5);
+  await Promise.all([R.move(p, 1.6), lookYaw(d, 0)]);
+  await R.pinch(0);
+  await R.move(restR, 1.0);
+  await wait(4); // "Who starts the symphony?"
+
+  // 5. Challenge 1: the violas, at the right ear.
+  p = pos(world, 'Section:violas');
+  await R.move(p, 1.2, 'grasp');
+  await R.pinch(1);
+  await Promise.all([R.move([0.16, eyes - 0.01, -0.03], 2.0), lookYaw(d, 12)]);
+  await wait(6.5);
+  await Promise.all([R.move(p, 1.6), lookYaw(d, 0)]);
+  await R.pinch(0);
+  await R.move(restR, 1.0);
+  await wait(2.5); // "Who sings the famous tune?"
+
+  // 6. Challenge 2: the first violins, at the left ear.
   p = pos(world, 'Section:violins-1');
   await L.move(p, 1.3, 'grasp');
   await L.pinch(1);
-  await Promise.all([L.move([-0.16, eyes - 0.01, -0.03], 2.2), lookYaw(d, -12)]);
-  await wait(6);
-  await Promise.all([L.move([-0.3, eyes - 0.1, -0.38], 1.8), lookYaw(d, 0)]);
+  await Promise.all([L.move([-0.16, eyes - 0.01, -0.03], 2.0), lookYaw(d, -12)]);
+  await wait(6.5);
+  // 7. Challenge 3: carry them across to the right (the flute and oboes are already left).
+  await Promise.all([L.move([0.2, eyes - 0.05, -0.36], 2.2), lookYaw(d, 0)]);
   await L.pinch(0);
-  await L.move(restL, 1.1);
-  await wait(3);
-
-  // 5. Rearrange: lift the horns up high in the middle.
-  p = pos(world, 'Section:horns');
-  await R.move(p, 1.2, 'grasp');
-  await R.pinch(1);
-  await R.move([0.02, eyes + 0.05, -0.42], 1.8);
-  await R.pinch(0);
-  await R.move(restR, 1.1);
+  await L.move(restL, 1.0);
   await wait(5);
 
-  // 6. Bring two together: the whole re-forms and floats home.
+  // 8. Bring two together: the whole re-forms, and the finale.
   p = pos(world, 'Section:clarinets-bassoons');
-  const q = pos(world, 'Section:flute-oboes');
+  const q = pos(world, 'Section:horns');
   await R.move(p, 1.2, 'grasp');
   await R.pinch(1);
   await R.move(q, 2.0);
   await R.pinch(0);
   await R.move(restR, 1.2);
-  await wait(4);
-
-  // 7. One hand: pinch and hold to open it up again.
-  const ball2 = pos(world, 'WholeBall');
-  await R.move([ball2[0] + 0.05, ball2[1], ball2[2] + 0.02], 1.2, 'index-tip');
-  await R.pinch(1);
-  await wait(1.9);
-  await R.pinch(0);
-  await R.move(restR, 1.2, 'grasp');
-  await wait(6);
+  await wait(12);
   console.info('[demo] finished');
 }
