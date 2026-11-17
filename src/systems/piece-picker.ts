@@ -8,11 +8,11 @@ import { faceViewer, readViewer } from './viewer.js';
 /** Card size (metres). */
 const CARD_WIDTH = 0.15;
 const CARD_HEIGHT = CARD_WIDTH * (190 / 512);
-/** Cards sit side by side below the whole ball: this far either side of it... */
-const CARD_SIDEWAYS = 0.085;
+/** Cards sit below the whole ball, either side of the pause button: this far either side of it... */
+const CARD_SIDEWAYS = 0.14;
 /** ...and this far below its centre. */
 const CARD_BELOW = 0.17;
-const DESKTOP_CARD_SIDEWAYS = 0.09;
+const DESKTOP_CARD_SIDEWAYS = 0.165;
 const DESKTOP_CARD_BELOW = 0.15;
 /** A fingertip within this of the card's face counts as a touch. */
 const TOUCH_DEPTH = 0.025;

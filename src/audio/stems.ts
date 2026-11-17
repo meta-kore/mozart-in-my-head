@@ -171,6 +171,11 @@ export class StemPlayer {
     }
   }
 
+  /** True while the listener has paused the music. */
+  get paused(): boolean {
+    return this.userPaused;
+  }
+
   async pause(): Promise<void> {
     this.userPaused = true;
     await this.ctx?.suspend();
@@ -287,6 +292,8 @@ export class StemPlayer {
     this.loopSeconds = 0;
     this.sourcesStarted = false;
     this.userPaused = false;
+    // Choosing a piece while paused means "play this": wake the audio up.
+    void this.ctx?.resume();
     this.loading = null;
     const generation = ++this.generation;
     this.loading = this.decodeAll(onProgress, generation);
