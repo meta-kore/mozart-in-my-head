@@ -34,7 +34,7 @@ export class StemPlayer {
   private sourcesStarted = false;
   private loading: Promise<void> | null = null;
 
-  constructor(private readonly specs: StemSpec[]) {}
+  constructor(private specs: StemSpec[]) {}
 
   get ids(): string[] {
     return this.specs.map((s) => s.id);
@@ -106,18 +106,21 @@ export class StemPlayer {
     return ctx;
   }
 
-  private async decodeAll(onProgress?: (done: number, total: number) => void): Promise<void> {
+  private async decodeAll(onProgress?: (done: number, total: number) => void, generation = this.generation): Promise<void> {
     const ctx = this.ensureContext();
+    const specs = this.specs;
     let done = 0;
     const buffers = await Promise.all(
-      this.specs.map(async (s) => {
+      specs.map(async (s) => {
         const res = await fetch(s.url);
         if (!res.ok) throw new Error(`stem ${s.id}: HTTP ${res.status}`);
         const buf = await ctx.decodeAudioData(await res.arrayBuffer());
-        onProgress?.(++done, this.specs.length);
+        if (generation === this.generation) onProgress?.(++done, specs.length);
         return buf;
       }),
     );
+    // A newer switchTo() replaced this load while it was running.
+    if (generation !== this.generation) return;
 
     this.loopSeconds = Math.min(...buffers.map((b) => b.duration));
     this.specs.forEach((s, i) => {
@@ -261,6 +264,36 @@ export class StemPlayer {
   get output(): AudioNode | null {
     return this.ctx ? this.master : null;
   }
+
+  /**
+   * Swap to a different set of stems (another piece): stop and release the
+   * current ones, then start loading the new set. Sound effects and the
+   * listener are untouched; call play() once load() resolves.
+   */
+  switchTo(specs: StemSpec[], onProgress?: (done: number, total: number) => void): Promise<void> {
+    for (const chain of this.stems.values()) {
+      try {
+        chain.source?.stop();
+      } catch {
+        // never started
+      }
+      chain.source?.disconnect();
+      chain.bus.disconnect();
+      chain.gain.disconnect();
+      chain.panner.disconnect();
+    }
+    this.stems.clear();
+    this.specs = specs;
+    this.loopSeconds = 0;
+    this.sourcesStarted = false;
+    this.userPaused = false;
+    this.loading = null;
+    const generation = ++this.generation;
+    this.loading = this.decodeAll(onProgress, generation);
+    return this.loading;
+  }
+
+  private generation = 0;
 
   /** Memory used by the decoded audio, in megabytes. */
   decodedMegabytes(): number {

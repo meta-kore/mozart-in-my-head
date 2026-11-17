@@ -14,4 +14,6 @@ export default defineAssets({
   'instrument-flute-oboe': buildInstrument('flute-oboe'),
   'instrument-clarinet-bassoon': buildInstrument('clarinet-bassoon'),
   'instrument-horn': buildInstrument('horn'),
+  'instrument-trumpet': buildInstrument('trumpet'),
+  'instrument-harp-timpani': buildInstrument('harp-timpani'),
 });

@@ -13,7 +13,7 @@ import {
 } from '@iwsdk/core';
 import { music } from '../audio/app-audio.js';
 import { BallStates, MusicBall, SectionBall } from '../components.js';
-import { mozart40 } from '../music/mozart40.js';
+import { currentPiece } from '../music/piece.js';
 import { PODIUM_HEIGHT, PODIUM_SIZE } from '../scene-assets/hall.scene-asset.js';
 import { getGlowTexture } from '../visuals/glow-ball.js';
 
@@ -50,8 +50,8 @@ export class HallLightingSystem extends createSystem({
   private lastState = '';
 
   private readonly pools: Mesh<PlaneGeometry, MeshBasicMaterial>[] = [];
-  private readonly sectionColours = mozart40.sections.map((s) => new Color(s.colour));
-  private readonly sectionLevels = new Float32Array(mozart40.sections.length);
+  private readonly sectionColours = currentPiece().piece.sections.map((s) => new Color(s.colour));
+  private readonly sectionLevels = new Float32Array(currentPiece().piece.sections.length);
   private readonly pos = new Vector3();
 
   init(): void {
@@ -59,7 +59,7 @@ export class HallLightingSystem extends createSystem({
     root.name = 'FloorGlows';
     const plane = new PlaneGeometry(1, 1);
     plane.rotateX(-Math.PI / 2);
-    for (let i = 0; i < mozart40.sections.length + 1; i++) {
+    for (let i = 0; i < this.sectionColours.length + 1; i++) {
       const mesh = new Mesh(
         plane,
         new MeshBasicMaterial({
@@ -136,7 +136,9 @@ export class HallLightingSystem extends createSystem({
       const obj = e.object3D;
       const i = e.getValue(SectionBall, 'index') as number;
       if (!obj || !obj.visible || i < 0 || i >= this.sectionColours.length) continue;
-      const sdb = 20 * Math.log10(music.level(mozart40.sections[i].id) + 1e-6);
+      const section = currentPiece().piece.sections[i];
+      this.sectionColours[i].set(section.colour);
+      const sdb = 20 * Math.log10(music.level(section.id) + 1e-6);
       const lvl = Math.max(0, Math.min(1, (sdb + 48) / 30));
       this.sectionLevels[i] += (lvl - this.sectionLevels[i]) * Math.min(1, 8 * dt);
       this.place(this.pools[used++], obj, this.sectionColours[i], 0.12 + 0.55 * this.sectionLevels[i], 0.8);

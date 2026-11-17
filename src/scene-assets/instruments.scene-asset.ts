@@ -17,7 +17,8 @@ import {
 /**
  * Small stylised instrument emblems that float inside each section's ball:
  * a violin (also the viola), a cello, a flute crossed with an oboe, a
- * clarinet crossed with a bassoon, and a French horn.
+ * clarinet crossed with a bassoon, a French horn, a trumpet, and a harp with
+ * a kettledrum.
  *
  * Contract for every emblem: origin at its visual centre, +Y up, faces +Z
  * (the player), largest dimension exactly 1 unit (the caller scales it to
@@ -26,7 +27,15 @@ import {
  * one two-tone mesh. Deterministic and DOM-free: the IWSDK editor evaluates
  * this module too.
  */
-export type InstrumentKind = 'violin' | 'viola' | 'cello' | 'flute-oboe' | 'clarinet-bassoon' | 'horn';
+export type InstrumentKind =
+  | 'violin'
+  | 'viola'
+  | 'cello'
+  | 'flute-oboe'
+  | 'clarinet-bassoon'
+  | 'horn'
+  | 'trumpet'
+  | 'harp-timpani';
 
 const bodyMaterial = new MeshStandardMaterial({ color: '#d9c7a4', roughness: 0.55, metalness: 0.1 });
 const accentMaterial = new MeshStandardMaterial({ color: '#fff6e0', roughness: 0.3, metalness: 0.4 });
@@ -287,9 +296,106 @@ function horn(): Group {
   return normalise(root);
 }
 
+/** A trumpet seen from the side: mouthpiece, folded tubing, three valves, flared bell. */
+function trumpet(): Group {
+  const root = new Group();
+  root.name = 'Trumpet';
+  const r = 0.022;
+  // Upper tube: leadpipe from the mouthpiece to the valves.
+  root.add(rod('Leadpipe', new Vector3(-0.46, 0.06, 0), new Vector3(0.12, 0.06, 0), 0.015, r, 'body', 10));
+  root.add(turned('Mouthpiece', [[0, -0.07], [0.036, -0.07], [0.014, -0.02], [0.012, 0.04], [0, 0.04]], 'accent', 12));
+  const mp = root.children[root.children.length - 1];
+  mp.position.set(-0.5, 0.06, 0);
+  mp.rotation.z = Math.PI / 2;
+  // Lower tube: from the valves forward into the bell.
+  root.add(rod('BellPipe', new Vector3(-0.22, -0.1, 0), new Vector3(0.2, -0.1, 0), r, r, 'body', 10));
+  // U-bends joining the tubes front and back (the tuning slides).
+  for (const [name, x, side] of [['FrontBend', 0.2, 1], ['BackBend', -0.22, -1]] as const) {
+    const pts: Vector3[] = [];
+    for (let i = 0; i <= 12; i++) {
+      const a = -Math.PI / 2 + (i / 12) * Math.PI;
+      pts.push(new Vector3(x + side * Math.cos(a) * 0.08, -0.02 + Math.sin(a) * 0.08 * side, 0));
+    }
+    root.add(part(name, new TubeGeometry(new CatmullRomCurve3(pts), 16, r, 8), 'body'));
+  }
+  // Three piston valves standing up between the tubes, with finger buttons.
+  for (let v = 0; v < 3; v++) {
+    const x = -0.06 + v * 0.07;
+    root.add(rod(`Valve${v}`, new Vector3(x, -0.16, 0), new Vector3(x, 0.12, 0), 0.028, 0.028, 'accent', 12));
+    root.add(rod(`Button${v}`, new Vector3(x, 0.12, 0), new Vector3(x, 0.2, 0), 0.008, 0.008, 'accent', 6));
+    root.add(rod(`Cap${v}`, new Vector3(x, 0.2, 0), new Vector3(x, 0.22, 0), 0.022, 0.022, 'accent', 10));
+  }
+  // The bell flares out to the right from the upper tube's level.
+  root.add(rod('BellNeck', new Vector3(0.12, 0.06, 0), new Vector3(0.2, 0.06, 0), r, r, 'body', 10));
+  const bell = turned('Bell', [
+    [0.022, 0.0], [0.03, 0.12], [0.05, 0.22], [0.09, 0.28], [0.15, 0.31], [0.155, 0.312], [0.14, 0.305],
+  ], 'body', 32);
+  bell.position.set(0.2, 0.06, 0);
+  bell.rotation.z = -Math.PI / 2;
+  root.add(bell);
+  const rim = part('BellRim', new TorusGeometry(0.152, 0.008, 6, 32), 'accent');
+  rim.position.set(0.512, 0.06, 0);
+  rim.rotation.y = Math.PI / 2;
+  root.add(rim);
+  return normalise(root);
+}
+
+/** A concert harp with a small kettledrum (timpani) at its foot. */
+function harpTimpani(): Group {
+  const root = new Group();
+  root.name = 'HarpTimpani';
+  // Soundbox: a long tapered box rising from the base towards the neck.
+  const sbA = new Vector3(-0.2, -0.46, 0);
+  const sbB = new Vector3(0.3, 0.34, 0);
+  root.add(rod('Soundbox', sbA, sbB, 0.075, 0.035, 'body', 4));
+  // Column: the straight pillar at the front, with a crown at the top.
+  root.add(rod('Column', new Vector3(-0.36, -0.46, 0), new Vector3(-0.36, 0.5, 0), 0.026, 0.03, 'body', 10));
+  root.add(turned('Crown', [[0, 0], [0.05, 0.0], [0.06, 0.04], [0.04, 0.08], [0, 0.09]], 'accent', 14));
+  root.children[root.children.length - 1].position.set(-0.36, 0.5, 0);
+  root.add(rod('Base', new Vector3(-0.42, -0.48, 0), new Vector3(-0.12, -0.48, 0), 0.03, 0.03, 'body', 8));
+  // Neck: an S-curve from the column top to the soundbox top.
+  const neck = new CatmullRomCurve3([
+    new Vector3(-0.36, 0.48, 0),
+    new Vector3(-0.15, 0.36, 0),
+    new Vector3(0.05, 0.44, 0),
+    new Vector3(0.22, 0.45, 0),
+    new Vector3(0.32, 0.36, 0),
+  ]);
+  root.add(part('Neck', new TubeGeometry(neck, 32, 0.028, 8), 'body'));
+  // Strings: vertical, from the soundbox up to the neck.
+  for (let i = 0; i < 11; i++) {
+    const x = -0.3 + i * 0.054;
+    const t = (x - sbA.x) / (sbB.x - sbA.x);
+    if (t < 0.06) continue;
+    const yBottom = sbA.y + t * (sbB.y - sbA.y);
+    let yTop = 0.45;
+    for (let k = 0; k <= 40; k++) {
+      const p = neck.getPoint(k / 40);
+      if (Math.abs(p.x - x) < 0.02) yTop = Math.min(yTop, p.y - 0.02);
+    }
+    if (yTop - yBottom < 0.06) continue;
+    root.add(rod(`String${i}`, new Vector3(x, yBottom, 0.01), new Vector3(x, yTop, 0.01), 0.005, 0.005, 'accent', 4));
+  }
+  // The kettledrum, in front at the lower right, with two sticks across it.
+  const drum = new Group();
+  drum.name = 'Timpani';
+  drum.add(turned('Kettle', [[0, -0.16], [0.08, -0.155], [0.15, -0.1], [0.18, -0.02], [0.185, 0.02], [0, 0.02]], 'body', 28));
+  drum.add(part('DrumHead', new CylinderGeometry(0.188, 0.188, 0.012, 28), 'accent'));
+  drum.add(rod('StickA', new Vector3(-0.12, 0.05, 0.08), new Vector3(0.14, 0.2, 0.05), 0.008, 0.008, 'accent', 6));
+  drum.add(rod('StickB', new Vector3(-0.08, 0.2, 0.08), new Vector3(0.16, 0.05, 0.06), 0.008, 0.008, 'accent', 6));
+  drum.position.set(0.24, -0.32, 0.18);
+  drum.rotation.x = 0.35;
+  root.add(drum);
+  return normalise(root);
+}
+
 /** Build one instrument emblem (largest dimension 1, centred, facing +Z). */
 export function buildInstrument(kind: InstrumentKind): Group {
   switch (kind) {
+    case 'trumpet':
+      return trumpet();
+    case 'harp-timpani':
+      return harpTimpani();
     case 'violin':
     case 'viola':
     case 'cello':

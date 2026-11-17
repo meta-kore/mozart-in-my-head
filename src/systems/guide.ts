@@ -1,7 +1,7 @@
 import { createSystem, Quaternion, Vector3 } from '@iwsdk/core';
 import { cues, music } from '../audio/app-audio.js';
 import { BallStates, MusicBall } from '../components.js';
-import { cueIndexAt, mozart40Guide } from '../music/mozart40-guide.js';
+import { cueIndexAt, currentPiece, pieceState, type Challenge } from '../music/piece.js';
 import { createTextPanel, type TextLine, type TextPanel } from '../visuals/glow-ball.js';
 import { SectionsSystem } from './sections.js';
 import { faceViewer, readViewer } from './viewer.js';
@@ -30,8 +30,10 @@ interface Step {
 }
 
 const CHALLENGES = 3;
+/** Steps before the piece's challenges (the two how-to lessons). */
+const LESSONS = 2;
 
-const STEPS: Step[] = [
+const LESSON_STEPS: Step[] = [
   {
     xr: ['Pinch a section and move it.', 'Its sound moves with it.'],
     desk: ['Drag a section to move it.', 'Scroll over one to bring it nearer or push it away.'],
@@ -44,35 +46,33 @@ const STEPS: Step[] = [
     challenge: 0,
     done: (_g, s) => s.soloIndex >= 0,
   },
-  {
-    xr: ['Who starts the symphony?', 'Not the violins. Find them and listen to them alone.'],
-    challenge: 1,
-    done: (g, s) => s.soloIndex === g.idx('violas'),
-    success: ['Yes: the violas.', 'Their restless pulse sets everything going.'],
-    celebrate: 'violas',
-  },
-  {
-    xr: ['Who sings the famous tune?', 'Find them and listen to them alone.'],
-    challenge: 2,
-    done: (g, s) => s.soloIndex === g.idx('violins-1') || s.soloIndex === g.idx('violins-2'),
-    success: ['The violins.', 'Firsts and seconds play it an octave apart.'],
-    celebrate: 'violins-1',
-  },
-  {
-    xr: ['Seat your own orchestra:', 'flute and oboes on your left, first violins on your right.'],
-    desk: ['Seat your own orchestra: drag the flute and oboes', 'to your left, and the first violins to your right.'],
-    challenge: 3,
-    done: (g, s) => s.sideways(g.idx('flute-oboes')) < -SIDE_MARGIN && s.sideways(g.idx('violins-1')) > SIDE_MARGIN,
-    success: ['Now they answer each other across you.', 'Listen for it in the second theme.'],
-    celebrate: 'flute-oboes',
-  },
-  {
-    xr: ['Bring any two together', 'to rebuild the symphony.'],
-    desk: ['Drag one section onto another', 'to rebuild the symphony (or press S).'],
-    challenge: 0,
-    done: (g, s) => s.merges > g.mergesAtStep,
-  },
 ];
+
+const MERGE_STEP: Step = {
+  xr: ['Bring any two together', 'to rebuild the music.'],
+  desk: ['Drag one section onto another', 'to rebuild the music (or press S).'],
+  challenge: 0,
+  done: (g, s) => s.merges > g.mergesAtStep,
+};
+
+function challengeStep(c: Challenge, n: number): Step {
+  return {
+    xr: c.xr,
+    desk: c.desk,
+    challenge: n,
+    success: c.success,
+    celebrate: c.celebrate,
+    done:
+      c.kind === 'solo'
+        ? (g, s) => c.ids.some((id) => s.soloIndex === g.idx(id))
+        : (g, s) => s.sideways(g.idx(c.left)) < -SIDE_MARGIN && s.sideways(g.idx(c.right)) > SIDE_MARGIN,
+  };
+}
+
+/** The guided steps for the current piece: lessons, its three challenges, then put it back. */
+function buildSteps(): Step[] {
+  return [...LESSON_STEPS, ...currentPiece().challenges.map((c, i) => challengeStep(c, i + 1)), MERGE_STEP];
+}
 
 /**
  * The listening guide: a "now playing" caption that follows the piece's
@@ -101,6 +101,8 @@ export class GuideSystem extends createSystem({
   private readonly wholePos = new Vector3();
   private readonly labelPos = new Vector3();
   private sections!: SectionsSystem;
+  private steps: Step[] = buildSteps();
+  private pieceVersion = pieceState.version;
 
   init(): void {
     this.instruction = this.panel('GuideInstruction', 0.36, 1024, 300);
@@ -124,7 +126,7 @@ export class GuideSystem extends createSystem({
 
   /** True once the guided steps and the finale are complete. */
   get finished(): boolean {
-    return this.step >= STEPS.length && !this.finaleDue;
+    return this.step >= this.steps.length && !this.finaleDue;
   }
 
   update(delta: number): void {
@@ -133,16 +135,18 @@ export class GuideSystem extends createSystem({
     let whole: ReturnType<typeof this.wholeEntity>;
     if (!s || !(whole = this.wholeEntity())) return;
     readViewer(this, this.head, this.headQuat);
+    if (this.pieceVersion !== pieceState.version) this.onPieceChanged();
     const state = whole.getValue(MusicBall, 'state') as string;
     whole.object3D?.getWorldPosition(this.wholePos);
     const apart = state === BallStates.Apart && s.settled;
 
     // "Now playing": the passage, and its sections highlighted.
     const t = music.position();
-    const cueIdx = t === null ? -1 : cueIndexAt(t);
+    const guide = currentPiece().guide;
+    const cueIdx = t === null ? -1 : cueIndexAt(guide, t);
     if (cueIdx !== this.shownCue) {
       this.shownCue = cueIdx;
-      const cue = mozart40Guide[cueIdx];
+      const cue = guide[cueIdx];
       if (cue) {
         this.caption.setText([
           { text: cue.title, size: 66, font: 'serif', weight: 600, colour: GOLD },
@@ -157,7 +161,7 @@ export class GuideSystem extends createSystem({
 
     // Layout: the instruction above the arc, the caption above that.
     const ins = this.instruction.mesh;
-    ins.visible = apart && this.step < STEPS.length;
+    ins.visible = apart && this.step < this.steps.length;
     if (ins.visible) {
       ins.position.copy(s.panelAnchor);
       faceViewer(ins, this.head);
@@ -172,6 +176,7 @@ export class GuideSystem extends createSystem({
   }
 
   private updateSteps(delta: number, apart: boolean, s: SectionsSystem): void {
+    const STEPS = this.steps;
     if (this.step >= STEPS.length) return;
     if (this.successSeconds > 0) {
       this.successSeconds -= delta;
@@ -200,6 +205,22 @@ export class GuideSystem extends createSystem({
     } else {
       this.advance(s);
     }
+  }
+
+  /**
+   * A new piece: its own captions and challenges. Lessons already learnt stay
+   * learnt; the challenges start again from the first.
+   */
+  private onPieceChanged(): void {
+    this.pieceVersion = pieceState.version;
+    this.steps = buildSteps();
+    if (this.step > LESSONS) this.step = LESSONS;
+    this.stepSeconds = 0;
+    this.successSeconds = 0;
+    this.finaleDue = false;
+    this.finaleSeconds = 0;
+    this.shownStep = -1;
+    this.shownCue = -1;
   }
 
   private advance(s: SectionsSystem): void {
@@ -231,9 +252,9 @@ export class GuideSystem extends createSystem({
       cues.play('finale', this.wholePos);
       this.finalePanel.setText([
         { text: 'Bravo!', size: 120, font: 'serif', weight: 600, colour: GOLD },
-        { text: 'You took Mozart’s orchestra apart and put it back together.', size: 38 },
-        { text: 'Pull it apart again whenever you like.', size: 34, colour: SOFT },
-        { text: 'Mozart · Symphony No. 40 in G minor · first movement', size: 28, colour: '#a9acbd', gap: 0.9 },
+        { text: `You took ${currentPiece().composer}’s orchestra apart and put it back together.`, size: 38 },
+        { text: 'Pull it apart again, or try another piece.', size: 34, colour: SOFT },
+        { text: currentPiece().finaleTitle, size: 28, colour: '#a9acbd', gap: 0.9 },
         { text: 'Performed by the Colibrì Ensemble · The Spheres Dataset · CC BY-SA 4.0', size: 26, colour: '#a9acbd' },
       ]);
     }

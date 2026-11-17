@@ -16,7 +16,8 @@ import {
 import { cues, music } from '../audio/app-audio.js';
 import { chooseSolo, distanceGain, EAR_OFFSET, SOLO_DUCK, stepDuck } from '../audio/mix.js';
 import { BallStates, MusicBall, SectionBall } from '../components.js';
-import { mozart40, type Section } from '../music/mozart40.js';
+import type { Section } from '../music/mozart40.js';
+import { currentPiece, pieceState } from '../music/piece.js';
 import { Bursts } from '../visuals/burst.js';
 import { createTextPanel, type TextPanel } from '../visuals/glow-ball.js';
 import { createSectionBall, type SectionBallView } from '../visuals/section-ball.js';
@@ -166,7 +167,8 @@ export class SectionsSystem extends createSystem({
     const zoneGeometry = new SphereGeometry(GRAB_ZONE_DIAMETER / 2, 10, 6);
     const ringGeometry = new RingGeometry(0.5, 0.535, 48);
 
-    mozart40.sections.forEach((section, index) => {
+    this.pieceVersion = pieceState.version;
+    currentPiece().piece.sections.forEach((section, index) => {
       const ball = createSectionBall(section, SECTION_DIAMETER);
       ball.root.name = `Section:${section.id}`;
       const zone = new Mesh(zoneGeometry, zoneMaterial);
@@ -250,6 +252,50 @@ export class SectionsSystem extends createSystem({
     this.installMouse();
   }
 
+  private pieceVersion = 0;
+
+  /**
+   * A new piece: the same seven balls take on its sections' names, colours
+   * and instrument emblems. Only happens while the sections are packed away.
+   */
+  private applyPiece(): void {
+    this.pieceVersion = pieceState.version;
+    const sections = currentPiece().piece.sections;
+    this.views.forEach((v, i) => {
+      const section = sections[i];
+      if (!section) return;
+      const root = v.ball.root;
+      for (const child of [...root.children]) {
+        if (child.name === 'GrabZone') continue;
+        root.remove(child);
+        child.traverse((o) => {
+          const m = (o as Mesh).material as MeshBasicMaterial | MeshBasicMaterial[] | undefined;
+          if (Array.isArray(m)) m.forEach((x) => x.dispose());
+          else m?.dispose();
+        });
+      }
+      const fresh = createSectionBall(section, SECTION_DIAMETER);
+      for (const child of [...fresh.root.children]) root.add(child);
+      v.ball = { root, setIntensity: fresh.setIntensity, animate: fresh.animate };
+      root.name = `Section:${section.id}`;
+      v.section = section;
+      v.colour.set(section.colour);
+      v.highlight.material.color.set(section.colour);
+      v.highlight.name = `Highlight:${section.id}`;
+      v.label.mesh.name = `SectionLabel:${section.id}`;
+      v.label.setText([
+        { text: section.label, size: 52 },
+        { text: section.instruments, size: 34, colour: '#b9bccb' },
+      ]);
+      v.level = 0;
+      v.duck = 1;
+      v.slowDb = -60;
+      v.featured = false;
+    });
+    this.solo = -1;
+    this.desktopSolo = -1;
+  }
+
   /** Index of the section heard alone, or -1. */
   get soloIndex(): number {
     return this.solo;
@@ -309,6 +355,7 @@ export class SectionsSystem extends createSystem({
   update(delta: number, time: number): void {
     const whole = this.wholeEntity();
     if (!whole) return;
+    if (this.pieceVersion !== pieceState.version && whole.getValue(MusicBall, 'state') !== BallStates.Apart) this.applyPiece();
     const presenting = readViewer(this, this.head, this.headQuat);
     this.presenting = presenting;
     this.right.set(1, 0, 0).applyQuaternion(this.headQuat);

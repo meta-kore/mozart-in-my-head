@@ -31,6 +31,13 @@ const SECTION_PITCH: Record<string, number> = {
   horns: BB4,
   violas: G4,
   'cellos-basses': D4,
+  'rj-violins': D6,
+  'rj-flutes-oboes': BB5,
+  'rj-clarinets-bassoons': G5,
+  'rj-brass': D5,
+  'rj-harp-percussion': BB4,
+  'rj-violas': G4,
+  'rj-cellos-basses': D4,
 };
 
 export class Cues {

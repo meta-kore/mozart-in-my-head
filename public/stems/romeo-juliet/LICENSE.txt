@@ -1,0 +1,15 @@
+The audio files in this folder are licensed under the Creative Commons
+Attribution-ShareAlike 4.0 International licence (CC BY-SA 4.0):
+https://creativecommons.org/licenses/by-sa/4.0/
+
+They are adapted from The Spheres Dataset, a recording of P. I. Tchaikovsky's
+Romeo and Juliet, Fantasy Overture, performed by the Colibrì Ensemble:
+https://zenodo.org/records/17347681
+
+Changes: the 33 instrument lines folded to mono and summed into seven
+families, the passage from 9:54 to 12:48 of the recording (the love theme)
+cut as a loop with a 2.5-second crossfade at the seam, one common gain
+applied, and encoded as Ogg Opus.
+
+This licence covers these audio files only. The software in this repository
+is under the MIT licence (see LICENSE at the repository root).

@@ -24,16 +24,6 @@ export interface SectionBallView {
   animate(time: number, delta: number, level: number): void;
 }
 
-const KIND: Record<string, InstrumentKind> = {
-  'violins-1': 'violin',
-  'violins-2': 'violin',
-  violas: 'viola',
-  'cellos-basses': 'cello',
-  'flute-oboes': 'flute-oboe',
-  'clarinets-bassoons': 'clarinet-bassoon',
-  horns: 'horn',
-};
-
 /** Emblem size inside the ball (largest dimension, metres). */
 const EMBLEM_SIZE = 0.068;
 
@@ -139,7 +129,7 @@ function shellMaterial(colour: Color): ShaderMaterial {
 export function createSectionBall(section: Section, diameter: number): SectionBallView {
   const root = new Group();
   const colour = new Color(section.colour);
-  const kind = KIND[section.id] ?? 'violin';
+  const kind = section.kind;
 
   const shell = new Mesh(shellGeometry, shellMaterial(colour));
   shell.name = 'BallShell';

@@ -3,16 +3,9 @@
 // each section's loudness in the stems (scripts' analysis, November 2026);
 // the descriptions follow the standard analysis of the score.
 
-export interface Cue {
-  /** Loop time (seconds) this passage starts. */
-  at: number;
-  /** Short name of the passage. */
-  title: string;
-  /** One line on what to listen for. */
-  text: string;
-  /** Section ids that carry this passage; their balls are highlighted. */
-  featured: string[];
-}
+import type { Cue } from './piece.js';
+
+export type { Cue };
 
 export const mozart40Guide: Cue[] = [
   {
@@ -83,9 +76,3 @@ export const mozart40Guide: Cue[] = [
   },
 ];
 
-/** Index of the passage playing at loop time `t` (seconds). */
-export function cueIndexAt(t: number): number {
-  let i = 0;
-  while (i + 1 < mozart40Guide.length && mozart40Guide[i + 1].at <= t) i++;
-  return i;
-}

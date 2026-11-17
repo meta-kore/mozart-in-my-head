@@ -9,7 +9,7 @@ import {
 } from '@iwsdk/core';
 import { loadProgress, music } from '../audio/app-audio.js';
 import { BallStates, MusicBall } from '../components.js';
-import { mozart40 } from '../music/mozart40.js';
+import { currentPiece, pieceState } from '../music/piece.js';
 import { createTextPanel, type TextLine, type TextPanel } from '../visuals/glow-ball.js';
 import { createWholeOrb, type WholeOrb } from '../visuals/whole-orb.js';
 import { faceViewer, readViewer } from './viewer.js';
@@ -38,8 +38,8 @@ const ONE_HAND_HOLD_SECONDS = 1.5;
 const MAX_STRETCH = 2.4;
 /** How quickly the ball springs back home when let go (per second). */
 const SPRING_RATE = 7;
-const CREDIT = 'Mozart · Symphony No. 40 · Colibrì Ensemble · The Spheres Dataset · CC BY-SA 4.0';
-const CREDIT_LINE: TextLine = { text: CREDIT, size: 24, colour: '#9a9db0', gap: 0.5 };
+/** The current piece's credit, under every message on the label. */
+const CREDIT_LINE: TextLine = { text: '', size: 24, colour: '#9a9db0', gap: 0.5 };
 const GOLD = '#f3d9a4';
 
 const SIDES = ['left', 'right'] as const;
@@ -56,7 +56,8 @@ export class WholeBallSystem extends createSystem({
 }) {
   private ball!: WholeOrb;
   /** Each section's loudness (0..1), for the lights inside the orb. */
-  private readonly levels: number[] = mozart40.sections.map(() => 0);
+  private readonly levels: number[] = currentPiece().piece.sections.map(() => 0);
+  private pieceVersion = -1;
   private label!: TextPanel;
   private ballEntity!: Entity;
   private labelEntity!: Entity;
@@ -98,7 +99,9 @@ export class WholeBallSystem extends createSystem({
   private readonly audioUp = { x: 0, y: 1, z: 0 };
 
   init(): void {
-    this.ball = createWholeOrb(BALL_DIAMETER, mozart40.sections.map((s) => s.colour));
+    this.ball = createWholeOrb(BALL_DIAMETER, currentPiece().piece.sections.map((s) => s.colour));
+    CREDIT_LINE.text = currentPiece().creditLine;
+    this.pieceVersion = pieceState.version;
     this.ball.root.name = 'WholeBall';
     this.ballEntity = this.world.createTransformEntity(this.ball.root, { persistent: true });
     this.ballEntity.addComponent(MusicBall, { state: BallStates.Idle, diameter: BALL_DIAMETER });
@@ -143,6 +146,7 @@ export class WholeBallSystem extends createSystem({
 
   private tick(delta: number, time: number): void {
     const presenting = readViewer(this, this.head, this.headQuat);
+    if (this.pieceVersion !== pieceState.version) this.onPieceChanged();
 
     if (presenting !== this.wasImmersive) {
       if (import.meta.env.DEV) console.info(`[WholeBall] immersive: ${presenting}`);
@@ -181,7 +185,7 @@ export class WholeBallSystem extends createSystem({
     } else if (state === BallStates.Idle) {
       if (this.handActivated()) this.onActivate();
       if (this.pendingStart && music.loaded) this.startMusic();
-      if (!this.pendingStart) this.showIdleText();
+      else this.showIdleText();
       // Gentle breathing glow while silent.
       this.ball.setIntensity(0.12 + 0.1 * Math.sin(time * 1.6));
       for (let i = 0; i < this.levels.length; i++) this.levels[i] = 0.15 + 0.1 * Math.sin(time * 1.3 + i);
@@ -197,7 +201,7 @@ export class WholeBallSystem extends createSystem({
       // The pull or hold brightens the ball on top of the music's pulse.
       this.ball.setIntensity(Math.min(1, this.level + 0.8 * this.splitProgress));
       for (let i = 0; i < this.levels.length; i++) {
-        const sdb = 20 * Math.log10(music.level(mozart40.sections[i].id) + 1e-6);
+        const sdb = 20 * Math.log10(music.level(currentPiece().piece.sections[i].id) + 1e-6);
         this.levels[i] = Math.max(0, Math.min(1, (sdb + 48) / 30));
       }
       this.ball.animate(time, delta, this.levels);
@@ -388,6 +392,25 @@ export class WholeBallSystem extends createSystem({
     this.ballEntity.setValue(MusicBall, 'state', BallStates.Playing);
     this.hintShown = null;
     this.setHint('pull');
+  }
+
+  /**
+   * Another piece was chosen: the orb takes its colours, and the new music
+   * starts by itself once its stems have loaded (the player already chose).
+   */
+  private onPieceChanged(): void {
+    this.pieceVersion = pieceState.version;
+    const piece = currentPiece();
+    CREDIT_LINE.text = piece.creditLine;
+    this.ball.setColours(piece.piece.sections.map((s) => s.colour));
+    const state = this.ballEntity.getValue(MusicBall, 'state');
+    const wasStarted = state !== BallStates.Idle;
+    if (state === BallStates.Apart) return; // the picker is hidden while apart
+    this.ballEntity.setValue(MusicBall, 'state', BallStates.Idle);
+    this.pendingStart = wasStarted;
+    this.idleShown = '';
+    this.hintShown = null;
+    this.showIdleText();
   }
 
   /** The invitation, or loading progress while the music is still arriving. */

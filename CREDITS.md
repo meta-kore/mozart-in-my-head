@@ -14,6 +14,15 @@
 
 The resulting files in `public/stems/mozart40/` are an adaptation of the dataset and are licensed under **CC BY-SA 4.0**, not under the MIT licence that covers the code. See `public/stems/mozart40/LICENSE.txt`.
 
+### Tchaikovsky, Romeo and Juliet (the second piece)
+
+**Pyotr Ilyich Tchaikovsky (1840–1893), Romeo and Juliet, Fantasy Overture**, an excerpt around the love theme (9:54 to 12:48 of this recording, looped with a 2.5-second crossfade). The composition is in the public domain.
+
+- **Performance and recording:** the Colibrì Ensemble, from the same **The Spheres Dataset** (https://zenodo.org/records/17347681, DOI 10.5281/zenodo.17347680), folder `TheSpheres_data/Tchaikovsky/StereoMix/`.
+- **Licence:** CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/
+
+**Changes made:** the 33 instrument lines were folded to mono and summed into seven families (violins; flutes, piccolo, oboes and cor anglais; clarinets and bassoons; brass; harp and percussion; violas; cellos and basses), cut to the excerpt, crossfaded at the loop point, scaled by one common gain and encoded as Ogg Opus by `scripts/make_stems_rj.py`. The files in `public/stems/romeo-juliet/` are an adaptation licensed under **CC BY-SA 4.0**; see `public/stems/romeo-juliet/LICENSE.txt`.
+
 ### Bach, Fugue in C major (synthesised fallback)
 
 The repository also contains a synthesised fallback that plays **J. S. Bach's Fugue in C major, BWV 846** from note data, with no recordings.

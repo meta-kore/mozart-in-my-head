@@ -15,6 +15,8 @@ export interface WholeOrb {
   root: Group;
   /** 0 = resting, 1 = loudest. */
   setIntensity(v: number): void;
+  /** Recolour the inner lights (a new piece's sections). */
+  setColours(colours: readonly string[]): void;
   /** Move the inner lights; `levels` are each section's loudness, 0..1. */
   animate(time: number, delta: number, levels: readonly number[]): void;
 }
@@ -106,6 +108,9 @@ export function createWholeOrb(diameter: number, colours: readonly string[]): Wh
       heart.material.opacity = 0.35 + 0.45 * intensity;
       halo.scale.setScalar(haloBase * (1 + 0.5 * intensity));
       halo.material.opacity = 0.3 + 0.55 * intensity;
+    },
+    setColours(colours: readonly string[]) {
+      lights.forEach((l, i) => l.base.set(colours[i % colours.length]));
     },
     animate(time: number, delta: number, levels: readonly number[]) {
       for (let i = 0; i < lights.length; i++) {
