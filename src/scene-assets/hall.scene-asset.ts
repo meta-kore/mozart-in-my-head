@@ -6,12 +6,15 @@ import {
   CircleGeometry,
   Color,
   CylinderGeometry,
+  DoubleSide,
   Group,
   Matrix3,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
+  Points,
   Quaternion,
+  ShaderMaterial,
   Vector3,
 } from '@iwsdk/core';
 
@@ -35,8 +38,9 @@ function seeded(seed: number): () => number {
  * - wood-panelled side walls with warm wall lamps, acoustic reflectors overhead;
  * - behind, the stage edge and the raked rows of the audience.
  *
- * Lighting is baked into vertex colours (unlit material), so the whole hall is
- * two draw calls: one solid mesh and one mesh of soft additive lamp glows.
+ * Lighting is baked into vertex colours twice (house lights, and concert
+ * spotlights) and blended on the GPU, so the hall is four draw calls: the solid
+ * mesh, soft lamp glows, visible spotlight beams and a cloud of drifting dust.
  * Deterministic and DOM-free (the IWSDK editor evaluates this module too).
  * Origin: the player's seat on the stage floor. Units: metres.
  */
@@ -49,6 +53,9 @@ const CEILING_Y = 12.5;
 /** The stage floor is at y = 0 and ends just behind the conductor. */
 const STAGE_EDGE_Z = 1.6;
 const AUDIENCE_FLOOR_Y = -1.0;
+/** The conductor's podium the player sits on (square, centred on the origin). */
+export const PODIUM_SIZE = 1.6;
+export const PODIUM_HEIGHT = 0.12;
 
 // ---- Baked lighting ----
 
@@ -60,16 +67,59 @@ interface BakedLight {
   reach: number;
 }
 
-const AMBIENT = new Color(0.06, 0.062, 0.085);
-const LIGHTS: BakedLight[] = [
-  // Warm stage wash from above, centred on the orchestra.
-  { pos: new Vector3(0, 9, -3.5), colour: new Color(1.0, 0.8, 0.58), power: 1.6, reach: 8 },
-  // A softer pool where the player sits.
-  { pos: new Vector3(0, 6, 0.5), colour: new Color(0.95, 0.82, 0.66), power: 0.5, reach: 4 },
-  // The organ, lit from below.
-  { pos: new Vector3(0, 1.5, -7.5), colour: new Color(1.0, 0.75, 0.45), power: 0.6, reach: 5 },
-  // Dim house lights over the audience.
-  { pos: new Vector3(0, 9, 11), colour: new Color(0.7, 0.72, 0.9), power: 0.35, reach: 10 },
+/**
+ * Two lighting states are baked, and the hall blends between them at runtime
+ * (see HallLightingSystem):
+ * - HOUSE: before the concert, the hall evenly and warmly lit;
+ * - STAGE: the concert: the house dark, pools of spotlight on the orchestra,
+ *   the organ glowing, the audience in shadow.
+ */
+const HOUSE_AMBIENT = new Color(0.17, 0.16, 0.17);
+const HOUSE_LIGHTS: BakedLight[] = [
+  // Warm wash over the stage and orchestra.
+  { pos: new Vector3(0, 9, -3.5), colour: new Color(1.0, 0.82, 0.62), power: 2.0, reach: 10 },
+  // Around the player.
+  { pos: new Vector3(0, 6, 0.5), colour: new Color(0.95, 0.84, 0.7), power: 0.6, reach: 5 },
+  // The organ.
+  { pos: new Vector3(0, 2.5, -6.5), colour: new Color(1.0, 0.8, 0.55), power: 0.7, reach: 6 },
+  // House lights over the audience, and along the hall.
+  { pos: new Vector3(0, 9, 10), colour: new Color(1.0, 0.86, 0.68), power: 1.8, reach: 12 },
+  { pos: new Vector3(-7, 9, 0), colour: new Color(1.0, 0.86, 0.68), power: 1.0, reach: 9 },
+  { pos: new Vector3(7, 9, 0), colour: new Color(1.0, 0.86, 0.68), power: 1.0, reach: 9 },
+];
+
+/** Overall brightness of the house lighting. */
+const HOUSE_GAIN = 2;
+
+const STAGE_AMBIENT = new Color(0.014, 0.014, 0.022);
+
+/** A spotlight: a cone from `pos` towards `target`, soft-edged between the two angles. */
+interface Spot {
+  pos: Vector3;
+  target: Vector3;
+  colour: Color;
+  power: number;
+  /** Half-angles of the cone (degrees): full strength inside `inner`, none beyond `outer`. */
+  inner: number;
+  outer: number;
+  /** Draw a visible beam of light for this spot. */
+  beam: boolean;
+}
+
+const WARM_SPOT = new Color(1.0, 0.8, 0.55);
+const SOFT_SPOT = new Color(0.95, 0.86, 0.75);
+
+/** Stage spotlights hung high over the orchestra. Exported for the beams and dust. */
+export const STAGE_SPOTS: Spot[] = [
+  { pos: new Vector3(0, 11.5, -5.5), target: new Vector3(0, 0, -4.2), colour: WARM_SPOT, power: 2.6, inner: 9, outer: 17, beam: true },
+  { pos: new Vector3(-5.5, 11.5, -4.5), target: new Vector3(-3.6, 0, -2.6), colour: WARM_SPOT, power: 2.2, inner: 8, outer: 15, beam: true },
+  { pos: new Vector3(5.5, 11.5, -4.5), target: new Vector3(3.6, 0, -2.6), colour: WARM_SPOT, power: 2.2, inner: 8, outer: 15, beam: true },
+  { pos: new Vector3(-3.5, 11.5, -8), target: new Vector3(-2.4, 0.5, -5.4), colour: WARM_SPOT, power: 1.8, inner: 7, outer: 14, beam: true },
+  { pos: new Vector3(3.5, 11.5, -8), target: new Vector3(2.4, 0.5, -5.4), colour: WARM_SPOT, power: 1.8, inner: 7, outer: 14, beam: true },
+  // A soft pool on the conductor's podium (no beam: it would sit in the player's face).
+  { pos: new Vector3(0, 10, 2.5), target: new Vector3(0, 0, 0), colour: SOFT_SPOT, power: 0.75, inner: 8, outer: 18, beam: false },
+  // The organ washed from below.
+  { pos: new Vector3(0, 0.6, -6.6), target: new Vector3(0, 6, -9.4), colour: new Color(1.0, 0.7, 0.4), power: 1.7, inner: 30, outer: 55, beam: false },
 ];
 /** Wall lamps, also baked as small lights (and drawn as glows). */
 const LAMPS: Vector3[] = [];
@@ -78,21 +128,52 @@ for (const side of [-1, 1]) {
 }
 const LAMP_COLOUR = new Color(1.0, 0.72, 0.42);
 
-function lightAt(p: Vector3, n: Vector3, out: Color): Color {
-  out.copy(AMBIENT);
-  const d = new Vector3();
-  const add = (pos: Vector3, colour: Color, power: number, reach: number) => {
-    d.subVectors(pos, p);
-    const dist = d.length();
-    const lambert = Math.max(0, n.dot(d.divideScalar(dist || 1)));
-    const fall = 1 / (1 + 3 * (dist / reach) * (dist / reach));
-    const k = power * (0.25 + 0.75 * lambert) * fall;
-    out.r += colour.r * k;
-    out.g += colour.g * k;
-    out.b += colour.b * k;
-  };
-  for (const l of LIGHTS) add(l.pos, l.colour, l.power, l.reach);
-  for (const l of LAMPS) add(l, LAMP_COLOUR, 0.6, 2.2);
+const lightDir = new Vector3();
+const spotAxis = new Vector3();
+
+function addPoint(p: Vector3, n: Vector3, out: Color, pos: Vector3, colour: Color, power: number, reach: number, wrap = 0.25): void {
+  lightDir.subVectors(pos, p);
+  const dist = lightDir.length();
+  const lambert = Math.max(0, n.dot(lightDir.divideScalar(dist || 1)));
+  const fall = 1 / (1 + 3 * (dist / reach) * (dist / reach));
+  const k = power * (wrap + (1 - wrap) * lambert) * fall;
+  out.r += colour.r * k;
+  out.g += colour.g * k;
+  out.b += colour.b * k;
+}
+
+function smooth(e0: number, e1: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+}
+
+/** The hall before the concert: even, warm house lighting. */
+function houseLightAt(p: Vector3, n: Vector3, out: Color): Color {
+  out.copy(HOUSE_AMBIENT);
+  for (const l of HOUSE_LIGHTS) addPoint(p, n, out, l.pos, l.colour, l.power, l.reach);
+  for (const l of LAMPS) addPoint(p, n, out, l, LAMP_COLOUR, 0.6, 2.2);
+  return out.multiplyScalar(HOUSE_GAIN);
+}
+
+/** The concert: spotlit stage, dark house, lamps turned right down. */
+function stageLightAt(p: Vector3, n: Vector3, out: Color): Color {
+  out.copy(STAGE_AMBIENT);
+  for (const s of STAGE_SPOTS) {
+    spotAxis.subVectors(s.target, s.pos).normalize();
+    lightDir.subVectors(p, s.pos);
+    const dist = lightDir.length();
+    const cos = spotAxis.dot(lightDir.divideScalar(dist || 1));
+    const cone = smooth(Math.cos((s.outer * Math.PI) / 180), Math.cos((s.inner * Math.PI) / 180), cos);
+    if (cone <= 0) continue;
+    const lambert = Math.max(0, -n.dot(lightDir));
+    const reach = s.pos.distanceTo(s.target) * 1.3;
+    const fall = 1 / (1 + (dist / reach) * (dist / reach));
+    const k = s.power * cone * (0.15 + 0.85 * lambert) * fall;
+    out.r += s.colour.r * k;
+    out.g += s.colour.g * k;
+    out.b += s.colour.b * k;
+  }
+  for (const l of LAMPS) addPoint(p, n, out, l, LAMP_COLOUR, 0.18, 1.6, 0.1);
   return out;
 }
 
@@ -100,12 +181,21 @@ function lightAt(p: Vector3, n: Vector3, out: Color): Color {
 
 class Builder {
   private readonly pos: number[] = [];
-  private readonly col: number[] = [];
+  private readonly house: number[] = [];
+  private readonly stage: number[] = [];
   private readonly m = new Matrix4();
   private readonly nm = new Matrix3();
   private readonly p = new Vector3();
   private readonly n = new Vector3();
   private readonly c = new Color();
+
+  private push(out: number[], albedo: Color, emissive: number): void {
+    out.push(
+      Math.min(1, albedo.r * this.c.r + emissive * albedo.r),
+      Math.min(1, albedo.g * this.c.g + emissive * albedo.g),
+      Math.min(1, albedo.b * this.c.b + emissive * albedo.b),
+    );
+  }
 
   /** Add a geometry, transformed, in an albedo colour lit by the baked lights. */
   add(geometry: BufferGeometry, albedo: Color, position: Vector3, rotationY = 0, scale?: Vector3, emissive = 0): void {
@@ -118,13 +208,12 @@ class Builder {
     for (let i = 0; i < pa.count; i++) {
       this.p.fromBufferAttribute(pa, i).applyMatrix4(this.m);
       this.n.fromBufferAttribute(na, i).applyMatrix3(this.nm).normalize();
-      lightAt(this.p, this.n, this.c);
       this.pos.push(this.p.x, this.p.y, this.p.z);
-      this.col.push(
-        Math.min(1, albedo.r * this.c.r + emissive * albedo.r),
-        Math.min(1, albedo.g * this.c.g + emissive * albedo.g),
-        Math.min(1, albedo.b * this.c.b + emissive * albedo.b),
-      );
+      houseLightAt(this.p, this.n, this.c);
+      this.push(this.house, albedo, emissive);
+      stageLightAt(this.p, this.n, this.c);
+      // Lamp shades dim with the house lights; gilt and the organ keep a little glow.
+      this.push(this.stage, albedo, emissive * 0.25);
     }
     if (g !== geometry) g.dispose();
   }
@@ -136,9 +225,10 @@ class Builder {
   build(name: string): Mesh {
     const g = new BufferGeometry();
     g.setAttribute('position', new BufferAttribute(new Float32Array(this.pos), 3));
-    g.setAttribute('color', new BufferAttribute(new Float32Array(this.col), 3));
+    g.setAttribute('aHouse', new BufferAttribute(new Float32Array(this.house), 3));
+    g.setAttribute('aStage', new BufferAttribute(new Float32Array(this.stage), 3));
     g.computeBoundingSphere();
-    const mesh = new Mesh(g, new MeshBasicMaterial({ vertexColors: true }));
+    const mesh = new Mesh(g, hallMaterial());
     mesh.name = name;
     return mesh;
   }
@@ -228,8 +318,10 @@ function orchestra(b: Builder): void {
       stand(b, Math.sin(a) * (row.r - 0.55), row.y, -Math.cos(a) * (row.r - 0.55), -a);
     }
   }
-  // The conductor's podium under the player.
-  b.box(0, 0.06, 0, 0.9, 0.12, 0.9, WOOD_DARK);
+  // The conductor's podium under the player, wide enough that the balls
+  // within reach hover over it (their glows fall on its top).
+  b.box(0, PODIUM_HEIGHT / 2, 0, PODIUM_SIZE, PODIUM_HEIGHT, PODIUM_SIZE, WOOD_DARK);
+  b.box(0, PODIUM_HEIGHT + 0.004, 0, PODIUM_SIZE - 0.08, 0.008, PODIUM_SIZE - 0.08, WOOD);
 }
 
 /** Panelled side walls with vertical ribs, the back wall, the rear wall and the ceiling. */
@@ -321,6 +413,189 @@ function lampFixtures(b: Builder): void {
   }
 }
 
+/**
+ * The hall's material: unlit, blending the two baked lighting states.
+ * Uniforms (driven by HallLightingSystem; shared by every placed copy):
+ * - uMix: 0 = house lights, 1 = concert lighting;
+ * - uStage: brightness of the concert lighting (breathes with the music).
+ */
+function hallMaterial(): ShaderMaterial {
+  return new ShaderMaterial({
+    name: 'HallBaked',
+    uniforms: { uMix: { value: 0 }, uStage: { value: 1 } },
+    vertexShader: /* glsl */ `
+      attribute vec3 aHouse;
+      attribute vec3 aStage;
+      uniform float uMix;
+      uniform float uStage;
+      varying vec3 vColour;
+      void main() {
+        vColour = mix(aHouse, aStage * uStage, uMix);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: /* glsl */ `
+      varying vec3 vColour;
+      void main() {
+        gl_FragColor = vec4(vColour, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+  });
+}
+
+/**
+ * Visible beams of light under each stage spotlight: open cones drawn
+ * additively, brightest where you look across them and fading out before the
+ * floor. One mesh; `uOpacity` is driven at runtime (0 before the concert).
+ */
+function lightBeams(): Mesh {
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const along: number[] = [];
+  const p = new Vector3();
+  const n = new Vector3();
+  const up = new Vector3(0, 1, 0);
+  const q = new Quaternion();
+  for (const s of STAGE_SPOTS) {
+    if (!s.beam) continue;
+    const length = s.pos.distanceTo(s.target);
+    const bottom = length * Math.tan(((s.outer * 0.8) * Math.PI) / 180);
+    const cone = new CylinderGeometry(0.1, bottom, length, 40, 6, true).toNonIndexed();
+    // Local +Y (the narrow top) points back up at the light.
+    q.setFromUnitVectors(up, new Vector3().subVectors(s.pos, s.target).normalize());
+    const mid = new Vector3().addVectors(s.pos, s.target).multiplyScalar(0.5);
+    const pa = cone.getAttribute('position');
+    const na = cone.getAttribute('normal');
+    const ua = cone.getAttribute('uv');
+    for (let i = 0; i < pa.count; i++) {
+      p.fromBufferAttribute(pa, i).applyQuaternion(q).add(mid);
+      n.fromBufferAttribute(na, i).applyQuaternion(q);
+      positions.push(p.x, p.y, p.z);
+      normals.push(n.x, n.y, n.z);
+      along.push(1 - ua.getY(i));
+    }
+    cone.dispose();
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
+  g.setAttribute('normal', new BufferAttribute(new Float32Array(normals), 3));
+  g.setAttribute('aAlong', new BufferAttribute(new Float32Array(along), 1));
+  g.computeBoundingSphere();
+  const material = new ShaderMaterial({
+    name: 'HallBeams',
+    uniforms: { uOpacity: { value: 0 }, uColour: { value: new Color(1.0, 0.78, 0.5) } },
+    vertexShader: /* glsl */ `
+      attribute float aAlong;
+      varying float vAlong;
+      varying vec3 vNormal;
+      varying vec3 vView;
+      void main() {
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vAlong = aAlong;
+        vNormal = normalize(normalMatrix * normal);
+        vView = normalize(-mv.xyz);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform float uOpacity;
+      uniform vec3 uColour;
+      varying float vAlong;
+      varying vec3 vNormal;
+      varying vec3 vView;
+      void main() {
+        // Faces seen square-on are the beam's middle; grazing faces its soft edges.
+        float facing = pow(abs(dot(normalize(vNormal), normalize(vView))), 2.0);
+        float ends = smoothstep(0.0, 0.1, vAlong) * (1.0 - smoothstep(0.7, 1.0, vAlong));
+        float a = uOpacity * facing * ends * (1.0 - 0.45 * vAlong);
+        gl_FragColor = vec4(uColour * a, 1.0);
+      }`,
+    transparent: true,
+    depthWrite: false,
+    blending: AdditiveBlending,
+    side: DoubleSide,
+    toneMapped: false,
+  });
+  const mesh = new Mesh(g, material);
+  mesh.name = 'LightBeams';
+  mesh.renderOrder = 2;
+  mesh.userData.iwsdkPreviewBounds = 'exclude';
+  return mesh;
+}
+
+/**
+ * Dust drifting slowly through the spotlight beams: one point cloud, moved
+ * entirely on the GPU by `uTime`. `uScale` is half the eye buffer's height
+ * in pixels (set at runtime) so motes keep their size in the headset.
+ */
+function dustMotes(rand: () => number): Points {
+  const beams = STAGE_SPOTS.filter((s) => s.beam);
+  const count = 480;
+  const positions = new Float32Array(count * 3);
+  const seeds = new Float32Array(count);
+  const axis = new Vector3();
+  const side = new Vector3();
+  const side2 = new Vector3();
+  for (let i = 0; i < count; i++) {
+    const s = beams[i % beams.length];
+    const length = s.pos.distanceTo(s.target);
+    axis.subVectors(s.target, s.pos).normalize();
+    side.set(1, 0, 0).cross(axis).normalize();
+    side2.crossVectors(axis, side);
+    const t = 0.2 + rand() * 0.72;
+    const r = length * t * Math.tan(((s.outer * 0.6) * Math.PI) / 180) * Math.sqrt(rand());
+    const a = rand() * Math.PI * 2;
+    const at = new Vector3()
+      .copy(s.pos)
+      .addScaledVector(axis, length * t)
+      .addScaledVector(side, Math.cos(a) * r)
+      .addScaledVector(side2, Math.sin(a) * r);
+    positions.set([at.x, at.y, at.z], i * 3);
+    seeds[i] = rand();
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(positions, 3));
+  g.setAttribute('aSeed', new BufferAttribute(seeds, 1));
+  g.computeBoundingSphere();
+  const material = new ShaderMaterial({
+    name: 'HallDust',
+    uniforms: { uTime: { value: 0 }, uOpacity: { value: 0 }, uScale: { value: 900 } },
+    vertexShader: /* glsl */ `
+      attribute float aSeed;
+      uniform float uTime;
+      uniform float uScale;
+      varying float vTwinkle;
+      void main() {
+        vec3 p = position + vec3(
+          sin(uTime * 0.11 + aSeed * 20.0) * 0.22,
+          sin(uTime * 0.05 + aSeed * 13.0) * 0.35,
+          cos(uTime * 0.09 + aSeed * 7.0) * 0.22);
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        gl_Position = projectionMatrix * mv;
+        float size = 0.012 + 0.012 * fract(aSeed * 7.31);
+        gl_PointSize = size * uScale * projectionMatrix[1][1] / max(0.05, -mv.z);
+        vTwinkle = 0.45 + 0.55 * sin(uTime * (0.5 + aSeed) + aSeed * 40.0);
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform float uOpacity;
+      varying float vTwinkle;
+      void main() {
+        float d = length(gl_PointCoord - 0.5) * 2.0;
+        float core = pow(max(0.0, 1.0 - d), 2.0);
+        gl_FragColor = vec4(vec3(1.0, 0.85, 0.6) * core * vTwinkle * uOpacity, 1.0);
+      }`,
+    transparent: true,
+    depthWrite: false,
+    blending: AdditiveBlending,
+    toneMapped: false,
+  });
+  const points = new Points(g, material);
+  points.name = 'Dust';
+  points.frustumCulled = false;
+  points.renderOrder = 2;
+  points.userData.iwsdkPreviewBounds = 'exclude';
+  return points;
+}
+
 /** Soft halos around each lamp, drawn additively in one mesh. */
 function lampGlows(): Mesh {
   const disc = new CircleGeometry(1, 24);
@@ -371,10 +646,10 @@ export function createConcertHall(): Group {
   const solid = b.build('HallSolid');
   const root = new Group();
   root.name = 'ConcertHall';
-  root.add(solid, lampGlows());
+  root.add(solid, lampGlows(), lightBeams(), dustMotes(rand));
   // Decoration only: never a pointer or grab target.
   root.traverse((o) => {
-    if ((o as Mesh).isMesh) (o as Mesh).raycast = () => {};
+    o.raycast = () => {};
   });
   return root;
 }
