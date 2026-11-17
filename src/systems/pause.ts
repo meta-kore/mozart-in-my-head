@@ -10,9 +10,6 @@ const HEIGHT = WIDTH * (140 / 400);
 /** Under the whole ball: this far below its centre (headset / computer). */
 const BELOW_BALL = 0.17;
 const DESKTOP_BELOW_BALL = 0.15;
-/** Under the arc of sections: this far below the guide's panel anchor. */
-const BELOW_ARC = 0.33;
-const DESKTOP_BELOW_ARC = 0.37;
 /** On a computer the button is drawn larger, to be easy to click. */
 const DESKTOP_SCALE = 1.35;
 const TOUCH_DEPTH = 0.025;
@@ -97,8 +94,7 @@ export class PauseSystem extends createSystem({
       m.position.y -= presenting ? BELOW_BALL : DESKTOP_BELOW_BALL;
       m.visible = whole.object3D.visible;
     } else if (this.sections.settled) {
-      m.position.copy(this.sections.panelAnchor);
-      m.position.y -= presenting ? BELOW_ARC : DESKTOP_BELOW_ARC;
+      m.position.copy(this.sections.pauseAnchor);
       m.visible = true;
     } else {
       m.visible = false;

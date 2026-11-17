@@ -41,6 +41,9 @@ const ARC_SPAN_DEG = 120;
 const DESKTOP_ARC_RADIUS = 0.62;
 const DESKTOP_ARC_BELOW_EYES = 0.2;
 const DESKTOP_ARC_SPAN_DEG = 70;
+/** Narrow screens: sections in two rows, this far apart side to side and between rows. */
+const ROW_SPACING = 0.13;
+const ROW_GAP = 0.19;
 /** Seconds for the balls to fly out on a split, or home on a merge. */
 const FLIGHT_SECONDS = 0.9;
 /** How far the balls swirl round (radians) as they fly home on a merge. */
@@ -80,7 +83,7 @@ const DRAG_MARGIN = 30;
 /** Desktop: the mouse wheel moves a ball nearer or further, within these distances of the eye. */
 const DESKTOP_NEAR = 0.3;
 /** Desktop: balls stay inside this part of the view (normalised screen coordinates, 1 = edge). */
-const VIEW_EDGE = 0.9;
+const VIEW_EDGE = 0.97;
 const DESKTOP_FAR = 1.3;
 
 interface SectionView {
@@ -161,6 +164,10 @@ export class SectionsSystem extends createSystem({
   private dragMoved = false;
   private dragStartX = 0;
   private dragStartY = 0;
+  /** Desktop: a ball was just let go after a drag (the one moment a screen merge may happen). */
+  private justDropped = false;
+  /** Where the pause button goes while the sections are apart. */
+  readonly pauseAnchor = new Vector3();
   /** Desktop: the section clicked to be heard alone, or -1. */
   private desktopSolo = -1;
   private readonly ndc = new Vector3();
@@ -417,7 +424,12 @@ export class SectionsSystem extends createSystem({
 
     // Putting it back: any two balls brought together re-form the whole.
     // (With the mouse, only once the dragged ball is let go.)
-    if (this.flight < 0 && !this.merging && this.dragIndex < 0 && this.mergeIfTouching(whole)) return;
+    // In a headset, two balls brought together merge. With a mouse or a finger
+    // on a screen, only a drop onto another ball does (balls nudged back into
+    // view never merge by themselves).
+    const mayMerge = presenting || this.justDropped;
+    this.justDropped = false;
+    if (this.flight < 0 && !this.merging && this.dragIndex < 0 && mayMerge && this.mergeIfTouching(whole)) return;
 
     // Solo: a ball held near either ear (or, on a computer, clicked); the others duck.
     this.earL.copy(this.head).addScaledVector(this.right, -EAR_OFFSET);
@@ -588,15 +600,20 @@ export class SectionsSystem extends createSystem({
     this.right.set(-this.fwd.z, 0, this.fwd.x);
     this.panelAnchor.copy(this.head).addScaledVector(this.fwd, radius * 1.05);
     this.panelAnchor.y = this.head.y - below + 0.21;
+    this.pauseAnchor.copy(this.panelAnchor);
+    this.pauseAnchor.y -= presenting ? 0.33 : 0.37;
+    const narrow = !presenting && this.narrowLayout();
 
     for (const v of this.views) {
       const a = (v.section.seat * span) / 2;
       v.from.copy(this.wholePos);
-      v.to
-        .copy(this.head)
-        .addScaledVector(this.fwd, Math.cos(a) * radius)
-        .addScaledVector(this.right, Math.sin(a) * radius);
-      v.to.y = this.head.y - below;
+      if (!narrow) {
+        v.to
+          .copy(this.head)
+          .addScaledVector(this.fwd, Math.cos(a) * radius)
+          .addScaledVector(this.right, Math.sin(a) * radius);
+        v.to.y = this.head.y - below;
+      }
       v.ball.root.position.copy(v.from);
       v.ball.root.visible = true;
       v.label.mesh.visible = true;
@@ -611,6 +628,36 @@ export class SectionsSystem extends createSystem({
     for (const v of this.views) this.sparks.burst(this.wholePos, v.colour, 8, 0.5, 0.018, 0.9);
     cues.play('split', this.wholePos);
     this.flight = 0;
+  }
+
+  /**
+   * A narrow screen (a phone held upright): the arc would not fit, so the
+   * sections go in two rows (four above, three below), far enough away that
+   * each row fits the width of the view. Returns false if the arc fits.
+   */
+  private narrowLayout(): boolean {
+    const halfV = (this.camera.fov * Math.PI) / 360;
+    const usable = Math.atan(Math.tan(halfV) * this.camera.aspect) * 0.85;
+    const arcHalf = (DESKTOP_ARC_SPAN_DEG * Math.PI) / 360;
+    if (usable >= arcHalf * 0.9) return false;
+    // The top row (four balls) and its outer label must fit the width.
+    const rowHalf = 1.5 * ROW_SPACING + 0.08; // the outer label's half-width
+    const distance = Math.min(DESKTOP_FAR, Math.max(DESKTOP_ARC_RADIUS, rowHalf / Math.tan(usable)));
+    const order = this.views.map((_, i) => i).sort((a, b) => this.views[a].section.seat - this.views[b].section.seat);
+    order.forEach((vi, k) => {
+      const top = k < 4;
+      const n = top ? 4 : order.length - 4;
+      const slot = top ? k : k - 4;
+      const x = (slot - (n - 1) / 2) * ROW_SPACING;
+      const v = this.views[vi];
+      v.to.copy(this.head).addScaledVector(this.fwd, distance).addScaledVector(this.right, x);
+      v.to.y = this.head.y - (top ? 0.02 : 0.02 + ROW_GAP);
+    });
+    this.panelAnchor.copy(this.head).addScaledVector(this.fwd, distance * 1.02);
+    this.panelAnchor.y = this.head.y + 0.15;
+    this.pauseAnchor.copy(this.head).addScaledVector(this.fwd, distance);
+    this.pauseAnchor.y = this.head.y - 0.02 - ROW_GAP - 0.13;
+    return true;
   }
 
   /** If two balls touch, re-form the whole ball where they met. Returns true if merging. */
@@ -713,7 +760,10 @@ export class SectionsSystem extends createSystem({
       if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
       // A click without a drag: hear this section alone (click again to stop).
       if (clicked) this.desktopSolo = this.desktopSolo === i ? -1 : i;
-      else this.onPutDown(this.views[i]);
+      else {
+        this.onPutDown(this.views[i]);
+        this.justDropped = true;
+      }
     };
     const wheel = (e: WheelEvent) => {
       if (!this.canUseMouse()) return;
